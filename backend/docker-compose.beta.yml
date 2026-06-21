@@ -1,0 +1,37 @@
+# Stack legere pour VPS 1 Go RAM (phase beta APK)
+# Usage: docker compose -f docker-compose.prod.yml -f docker-compose.beta.yml up -d --build
+
+services:
+  db:
+    command: postgres -c shared_buffers=64MB -c max_connections=40
+
+  backend:
+    environment:
+      EXPOSE_OTP_IN_RESPONSE: "true"
+      PAYMENT_SANDBOX_MODE: "true"
+      DB_POOL_SIZE: "3"
+      DB_MAX_OVERFLOW: "5"
+    command: >
+      gunicorn app.main:app
+      -k uvicorn.workers.UvicornWorker
+      -w 1
+      -b 0.0.0.0:8000
+      --timeout 120
+      --graceful-timeout 30
+    healthcheck:
+      start_period: 180s
+      interval: 15s
+      timeout: 10s
+      retries: 12
+
+  celery-worker:
+    profiles: ["full"]
+    command: celery -A app.celery_app.celery_app worker --loglevel=info --concurrency=1
+
+  celery-beat:
+    profiles: ["full"]
+
+  nginx:
+    depends_on:
+      backend:
+        condition: service_started

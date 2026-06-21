@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>SombaTeka Admin — Connexion</title>
+  <link rel="icon" href="/admin/assets/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="/admin/assets/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/admin/assets/favicon-16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/admin/assets/apple-touch-icon.png">
+  <meta name="application-name" content="SombaTeka Admin">
+  <meta name="theme-color" content="#1e3a8a">
+  <link rel="stylesheet" href="/admin/assets/login.css?v=10-catalog-carousel">
+</head>
+<body class="login-page">
+  <div class="login-bg" aria-hidden="true"></div>
+  <div class="login-layout">
+    <section class="login-hero">
+      <span class="login-hero-mark">ST</span>
+      <h1>SombaTeka Admin</h1>
+      <p>Console sécurisée pour la modération, les comptes pro et la gestion de la plateforme.</p>
+      <ul class="login-features">
+        <li>Accès par rôle (modérateur, admin, super admin)</li>
+        <li>Connexion individuelle par membre staff</li>
+        <li>Journal d'activité et audit</li>
+      </ul>
+    </section>
+
+    <div class="login-box">
+      <div class="login-brand-mobile">
+        <span class="hero-mark">ST</span>
+        <h1>SombaTeka</h1>
+        <p class="login-tagline">Console d'administration</p>
+      </div>
+
+      <div class="login-box-head">
+        <h2>Connexion</h2>
+        <p>Utilisez votre numéro staff et votre mot de passe personnel.</p>
+      </div>
+
+      <form id="login-form" autocomplete="on">
+        <div class="field">
+          <label for="login-phone">Téléphone</label>
+          <input id="login-phone" name="phone" type="tel" inputmode="tel" autocomplete="username" required placeholder="+243900000000">
+        </div>
+        <div class="field">
+          <label for="login-password">Mot de passe</label>
+          <div class="field-input-wrap">
+            <input id="login-password" name="password" type="password" autocomplete="current-password" required placeholder="••••••••">
+            <button type="button" class="toggle-password" id="toggle-password" aria-label="Afficher le mot de passe">Voir</button>
+          </div>
+        </div>
+        <button type="submit" class="btn-login" id="login-submit">Se connecter</button>
+        <p id="login-error" class="form-error" hidden></p>
+      </form>
+
+      <footer class="login-foot">
+        <strong>Accès réservé au personnel autorisé</strong>
+        SombaTeka · République Démocratique du Congo
+      </footer>
+    </div>
+  </div>
+  <script src="/admin/assets/login.js?v=10-catalog-carousel" type="module"></script>
+</body>
+</html>

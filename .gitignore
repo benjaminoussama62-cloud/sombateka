@@ -1,0 +1,36 @@
+# Python
+backend/.venv/
+backend/.env
+backend/__pycache__/
+backend/**/__pycache__/
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/.ruff_cache/
+backend/*.sqlite
+backend/.env.production
+backend/secrets-beta.local.txt
+backend/uploads/
+
+# Node (si utilisé plus tard)
+node_modules/
+
+# Flutter / Dart
+mobile/.dart_tool/
+mobile/build/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/.packages
+mobile/.pub-cache/
+mobile/android/key.properties
+mobile/android/signing-credentials.local.txt
+mobile/android/*.jks
+mobile/android/sombateka-upload.jks
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+Desktop.ini
+

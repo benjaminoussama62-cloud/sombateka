@@ -1,0 +1,10 @@
+# Copier vers key.properties et remplir avant build Play Store.
+# Ne jamais committer key.properties ni le fichier .jks !
+#
+# Générer un keystore :
+# keytool -genkey -v -keystore sombateka-upload.jks -keyalg RSA -keysize 2048 -validity 10000 -alias sombateka
+
+storePassword=CHANGE_ME
+keyPassword=CHANGE_ME
+keyAlias=sombateka
+storeFile=../sombateka-upload.jks

@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:16
+    container_name: sombateka-db
+    environment:
+      POSTGRES_USER: sombateka
+      POSTGRES_PASSWORD: sombateka_dev_password
+      POSTGRES_DB: sombateka
+    ports:
+      - "5432:5432"
+    volumes:
+      - sombateka_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sombateka -d sombateka"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  sombateka_pgdata:
+
