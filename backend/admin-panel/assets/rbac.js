@@ -18,6 +18,8 @@ export const PERM = {
   ESCROW_RESOLVE: "escrow.resolve",
   SUPPORT_VIEW: "support.view",
   SUPPORT_REPLY: "support.reply",
+  TRASH_VIEW: "trash.view",
+  TRASH_MANAGE: "trash.manage",
 };
 
 export const STAFF_ROLES = ["super_admin", "admin", "moderator"];
@@ -43,4 +45,8 @@ export function canRevealPii(me) {
 
 export function canManageTeam(me) {
   return me?.role === "super_admin" || hasPerm(me, PERM.TEAM_MANAGE);
+}
+
+export function canManageTrash(me) {
+  return me?.role === "super_admin" && hasPerm(me, PERM.TRASH_MANAGE);
 }

@@ -13,6 +13,7 @@ import {
   canBan,
   canRevealPii,
   canManageTeam,
+  canManageTrash,
   isStaffRole,
 } from "./rbac.js";
 
@@ -31,6 +32,7 @@ const PAGES = {
   listings: { title: "Annonces" },
   audit: { title: "Journal d'audit" },
   team: { title: "Équipe" },
+  trash: { title: "Corbeille serveur" },
 };
 
 let currentPage = "dashboard";
@@ -158,7 +160,7 @@ function applyNavPermissions() {
 }
 
 function firstAllowedPage() {
-  const order = ["dashboard", "support", "reports", "listings", "kyc", "users", "audit", "team"];
+  const order = ["dashboard", "support", "reports", "listings", "kyc", "users", "audit", "team", "trash"];
   const me = getMe();
   for (const p of order) {
     const perm = $(`.nav-item[data-page="${p}"]`)?.dataset?.perm;
@@ -214,6 +216,7 @@ async function loadPage(page) {
     else if (page === "listings") await renderListings();
     else if (page === "audit") await renderAudit();
     else if (page === "team") await renderTeam();
+    else if (page === "trash") await renderTrash();
   } catch (e) {
     toast(e.message, true);
     if (e.status === 401 || e.status === 403) logout();
@@ -1272,6 +1275,91 @@ async function renderTeam() {
       });
     });
   }
+}
+
+const TRASH_TYPE_LABELS = {
+  listing: "Annonce",
+  publication: "Publication",
+  conversation: "Conversation",
+};
+
+async function renderTrash() {
+  const el = $("#page-trash");
+  if (!canManageTrash(getMe())) {
+    el.innerHTML = `<p class="muted">Réservé au super administrateur.</p>`;
+    return;
+  }
+  el.innerHTML = `
+    <div class="panel">
+      <div class="panel-head">
+        <h3>Corbeille SombaTeka</h3>
+        <p class="muted">Annonces, publications et conversations supprimées — restauration ou purge définitive.</p>
+      </div>
+      <div class="panel-actions" style="margin-bottom:1rem;display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="btn btn-ghost btn-sm" id="trash-filter-all">Tout</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="trash-filter-publication">Publications</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="trash-filter-listing">Annonces</button>
+        <button type="button" class="btn btn-danger btn-sm" id="trash-reset-beta" style="margin-left:auto">Réinitialiser données beta</button>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Type</th><th>Titre</th><th>Clé</th><th>Supprimé le</th><th></th></tr></thead>
+          <tbody id="trash-body"></tbody>
+        </table>
+      </div>
+    </div>`;
+
+  let filter = "";
+  async function loadTrash() {
+    let url = "/admin/trash?limit=100";
+    if (filter) url += `&entity_type=${filter}`;
+    const data = await api(url);
+    const tbody = $("#trash-body");
+    tbody.innerHTML = "";
+    for (const item of data.items || []) {
+      const tr = document.createElement("tr");
+      const deleted = item.deleted_at ? new Date(item.deleted_at).toLocaleString("fr-FR") : "—";
+      tr.innerHTML = `
+        <td>${TRASH_TYPE_LABELS[item.entity_type] || item.entity_type}</td>
+        <td>${escapeHtml(item.title || "—")}</td>
+        <td><code>${escapeHtml(item.entity_key || "")}</code></td>
+        <td>${deleted}</td>
+        <td class="actions">
+          <button type="button" class="btn btn-sm btn-primary" data-restore-trash="${item.id}">Restaurer</button>
+          <button type="button" class="btn btn-sm btn-danger" data-purge-trash="${item.id}">Purger</button>
+        </td>`;
+      tbody.appendChild(tr);
+    }
+    tbody.querySelectorAll("[data-restore-trash]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        await api(`/admin/trash/${btn.dataset.restoreTrash}/restore`, { method: "POST" });
+        toast("Élément restauré.");
+        loadTrash();
+      });
+    });
+    tbody.querySelectorAll("[data-purge-trash]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("Suppression définitive — irréversible. Continuer ?")) return;
+        await api(`/admin/trash/${btn.dataset.purgeTrash}/purge`, { method: "POST" });
+        toast("Élément purgé.");
+        loadTrash();
+      });
+    });
+  }
+
+  $("#trash-filter-all").addEventListener("click", () => { filter = ""; loadTrash(); });
+  $("#trash-filter-publication").addEventListener("click", () => { filter = "publication"; loadTrash(); });
+  $("#trash-filter-listing").addEventListener("click", () => { filter = "listing"; loadTrash(); });
+  $("#trash-reset-beta").addEventListener("click", async () => {
+    if (!confirm("SUPPRIMER tous les utilisateurs et toutes les annonces sauf les super administrateurs ?")) return;
+    if (!confirm("Dernière confirmation — cette action est irréversible.")) return;
+    const r = await api("/admin/trash/reset-beta-data", { method: "POST" });
+    toast("Données beta réinitialisées.");
+    console.log(r.summary);
+    loadTrash();
+  });
+
+  await loadTrash();
 }
 
 $("#logout-btn").addEventListener("click", logout);

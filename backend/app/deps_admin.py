@@ -13,6 +13,15 @@ def get_admin_staff(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
+def require_super_admin(staff: User = Depends(get_admin_staff)) -> User:
+    if staff.role != UserRole.super_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Réservé au super administrateur SombaTeka",
+        )
+    return staff
+
+
 def require_permission(permission: str) -> Callable:
     def _dep(staff: User = Depends(get_admin_staff)) -> User:
         if not has_permission(staff.role, permission):

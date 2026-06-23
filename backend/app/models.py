@@ -35,6 +35,7 @@ class ListingStatus(str, enum.Enum):
     active = "active"
     hidden = "hidden"
     sold = "sold"
+    deleted = "deleted"
 
 
 class ListingType(str, enum.Enum):
@@ -197,6 +198,8 @@ class Listing(Base):
     delivery_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
     auto_hidden_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     auto_hidden_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     status: Mapped[ListingStatus] = mapped_column(Enum(ListingStatus), default=ListingStatus.active)
     listing_type: Mapped[ListingType] = mapped_column(Enum(ListingType), default=ListingType.sale)
     seller_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
@@ -472,6 +475,22 @@ class AdminAuditLog(Base):
     detail_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
+
+
+class TrashItem(Base):
+    """Corbeille serveur — restauration / purge réservée au super administrateur."""
+
+    __tablename__ = "trash_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    entity_type: Mapped[str] = mapped_column(String(32), index=True)
+    entity_key: Mapped[str] = mapped_column(String(128), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    detail_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    deleted_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    deleted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
+    restored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class HiddenConversation(Base):

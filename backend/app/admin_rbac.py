@@ -23,6 +23,8 @@ PERM_ESCROW_VIEW = "escrow.view"
 PERM_ESCROW_RESOLVE = "escrow.resolve"
 PERM_SUPPORT_VIEW = "support.view"
 PERM_SUPPORT_REPLY = "support.reply"
+PERM_TRASH_VIEW = "trash.view"
+PERM_TRASH_MANAGE = "trash.manage"
 
 ROLE_LABELS: dict[UserRole, str] = {
     UserRole.super_admin: "Super administrateur",
@@ -81,6 +83,8 @@ ROLE_PERMISSIONS: dict[UserRole, frozenset[str]] = {
             PERM_ESCROW_RESOLVE,
             PERM_SUPPORT_VIEW,
             PERM_SUPPORT_REPLY,
+            PERM_TRASH_VIEW,
+            PERM_TRASH_MANAGE,
         }
     ),
 }

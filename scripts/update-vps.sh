@@ -18,6 +18,12 @@ REPO_DIR="${REPO_DIR//$'\r'/}"
 DOMAIN="${DOMAIN//$'\r'/}"
 DOMAIN="${DOMAIN%%[[:space:]]}"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -x "$SCRIPT_DIR/backup-vps-data.sh" ]]; then
+  echo "==> Sauvegarde uploads + .env avant deploy..."
+  REPO_DIR="$REPO_DIR" bash "$SCRIPT_DIR/backup-vps-data.sh"
+fi
+
 cd "$REPO_DIR/backend"
 
 if [[ ! -f .env.production ]]; then

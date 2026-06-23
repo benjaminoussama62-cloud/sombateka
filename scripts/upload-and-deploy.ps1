@@ -23,6 +23,27 @@ function Test-SshPort {
     }
 }
 
+function Send-ArchiveToVps {
+    param(
+        [string]$LocalPath,
+        [string]$HostIp,
+        [string]$RemotePath
+    )
+    Write-Host "      Essai SCP (protocole legacy -O)..." -ForegroundColor DarkGray
+    & scp @SshOpts -O $LocalPath "${User}@${HostIp}:$RemotePath"
+    if ($LASTEXITCODE -eq 0) { return $true }
+
+    Write-Host "      SCP echoue, essai SFTP..." -ForegroundColor DarkGray
+    $sftpBatch = Join-Path $env:TEMP "sombateka-sftp.txt"
+    @(
+        "put `"$LocalPath`" $RemotePath"
+        "quit"
+    ) | Set-Content -Path $sftpBatch -Encoding ascii
+    & sftp @SshOpts -b $sftpBatch "${User}@${HostIp}"
+    Remove-Item $sftpBatch -Force -ErrorAction SilentlyContinue
+    return ($LASTEXITCODE -eq 0)
+}
+
 function Write-SshTroubleshoot {
     param([string]$HostIp)
     Write-Host ""
@@ -96,9 +117,13 @@ Write-Host "      Port 22 OK" -ForegroundColor Green
 
 Write-Host "[2/4] Upload vers le serveur..." -ForegroundColor Yellow
 Write-Host "      -> Saisissez le mot de passe root DigitalOcean quand demande" -ForegroundColor DarkGray
-& scp @SshOpts $Archive "${User}@${VpsIp}:/root/sombateka-deploy.tar.gz"
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "ERREUR upload SCP." -ForegroundColor Red
+if (-not (Send-ArchiveToVps -LocalPath $Archive -HostIp $VpsIp -RemotePath "/root/sombateka-deploy.tar.gz")) {
+    Write-Host "ERREUR upload (SCP + SFTP)." -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Alternative console DO (code deja sur GitHub) :" -ForegroundColor Cyan
+    Write-Host "  git clone https://USER:TOKEN@github.com/benjaminoussama62-cloud/sombateka.git /root/SombaTeka"
+    Write-Host "  cp /root/env-backup.production /root/SombaTeka/backend/.env.production"
+    Write-Host "  bash /root/SombaTeka/scripts/update-vps.sh --domain $Domain"
     Write-SshTroubleshoot -HostIp $VpsIp
     exit 1
 }
@@ -116,13 +141,31 @@ Write-Host "      -> Mot de passe SSH a nouveau" -ForegroundColor DarkGray
 
 $RemoteScript = @'
 set -e
-mkdir -p /root/SombaTeka
-cd /root/SombaTeka
+REPO=/root/SombaTeka
+BACKUP=/root/sombateka-backups/pre-deploy-$(date -u +%Y%m%d-%H%M%S)
+mkdir -p "$BACKUP"
+if [ -f "$REPO/backend/.env.production" ]; then
+  cp "$REPO/backend/.env.production" "$BACKUP/.env.production"
+  cp "$REPO/backend/.env.production" /root/env-backup.production
+fi
+if [ -d "$REPO/backend/uploads" ] && [ "$(ls -A "$REPO/backend/uploads" 2>/dev/null)" ]; then
+  cp -a "$REPO/backend/uploads" "$BACKUP/uploads"
+fi
+mkdir -p "$REPO"
+cd "$REPO"
 if [ -f /root/sombateka-deploy.tar.gz ]; then
   tar -xzf /root/sombateka-deploy.tar.gz
 fi
+if [ -d "$BACKUP/uploads" ]; then
+  mkdir -p backend
+  cp -a "$BACKUP/uploads" backend/uploads
+fi
+if [ -f /root/env-backup.production ]; then
+  mkdir -p backend
+  cp /root/env-backup.production backend/.env.production
+fi
 find scripts -name "*.sh" -exec sed -i 's/\r$//' {} \;
-chmod +x scripts/update-vps.sh scripts/deploy-vps.sh
+chmod +x scripts/update-vps.sh scripts/deploy-vps.sh scripts/backup-vps-data.sh 2>/dev/null || true
 bash scripts/update-vps.sh --domain DOMAIN_PLACEHOLDER
 '@
 $RemoteScript = $RemoteScript -replace "DOMAIN_PLACEHOLDER", $Domain

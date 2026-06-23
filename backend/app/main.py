@@ -11,6 +11,7 @@ from app.admin_panel_ui import mount_admin_panel
 from app.middleware import RedisRateLimitMiddleware
 from app.middleware_security_headers import SecurityHeadersMiddleware
 from app.routers.admin import router as admin_router
+from app.routers.admin_trash import router as admin_trash_router
 from app.routers.auth import router as auth_router
 from app.routers.categories import router as categories_router
 from app.routers.kyc import router as kyc_router
@@ -83,6 +84,7 @@ def create_app() -> FastAPI:
     app.include_router(users_router, prefix=settings.api_prefix)
     app.include_router(support_router, prefix=settings.api_prefix)
     app.include_router(admin_router, prefix=settings.api_prefix)
+    app.include_router(admin_trash_router, prefix=settings.api_prefix)
     app.include_router(webhooks_router, prefix=settings.api_prefix)
     app.include_router(ws_router)
     mount_admin_panel(app)

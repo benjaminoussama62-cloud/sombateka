@@ -816,6 +816,8 @@ def republish_listing(
 
     now = datetime.now(timezone.utc)
     listing.status = ListingStatus.active
+    listing.deleted_at = None
+    listing.deleted_by_user_id = None
     listing.auto_hidden_at = None
     listing.auto_hidden_reason = None
     listing.created_at = now
@@ -941,7 +943,30 @@ def delete_listing(
         "moderator",
     }:
         raise HTTPException(status_code=403, detail="Not your listing")
-    listing.status = ListingStatus.hidden
-    listing.updated_at = datetime.now(timezone.utc)
+    from app.services.trash_service import move_listing_to_trash
+
+    move_listing_to_trash(db, listing, deleted_by=current_user)
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/publication/{publication_id}")
+def delete_publication(
+    publication_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Met toute une publication officielle (multi-produits) dans la corbeille."""
+    from app.services.trash_service import move_publication_to_trash
+
+    try:
+        move_publication_to_trash(
+            db,
+            publication_id=publication_id.strip(),
+            seller_id=current_user.id,
+            deleted_by=current_user,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
     db.commit()
     return {"ok": True}
