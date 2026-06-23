@@ -20,6 +20,9 @@ export const PERM = {
   SUPPORT_REPLY: "support.reply",
   TRASH_VIEW: "trash.view",
   TRASH_MANAGE: "trash.manage",
+  CHAT_VIEW: "chat.view",
+  CHAT_SEND: "chat.send",
+  CHAT_CREATE_GROUP: "chat.create_group",
 };
 
 export const STAFF_ROLES = ["super_admin", "admin", "moderator"];
@@ -49,4 +52,8 @@ export function canManageTeam(me) {
 
 export function canManageTrash(me) {
   return me?.role === "super_admin" && hasPerm(me, PERM.TRASH_MANAGE);
+}
+
+export function canCreateChatGroup(me) {
+  return me?.role === "super_admin" && hasPerm(me, PERM.CHAT_CREATE_GROUP);
 }

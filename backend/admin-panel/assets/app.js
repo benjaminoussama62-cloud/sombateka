@@ -14,6 +14,7 @@ import {
   canRevealPii,
   canManageTeam,
   canManageTrash,
+  canCreateChatGroup,
   isStaffRole,
 } from "./rbac.js";
 
@@ -25,6 +26,7 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const PAGES = {
   dashboard: { title: "Tableau de bord" },
   support: { title: "Centre d'aide" },
+  chat: { title: "Chat équipe" },
   kyc: { title: "Comptes pro" },
   reports: { title: "Signalements" },
   escrow: { title: "Litiges & séquestre" },
@@ -94,6 +96,7 @@ function auditActionLabel(action) {
     "team.invite": "Invitation membre staff",
     "team.password_reset": "Réinitialisation mot de passe staff",
     "support.reply": "Réponse centre d'aide",
+    "chat.group_create": "Création groupe chat",
     "escrow.refund_buyer": "Remboursement acheteur",
     "user.warn": "Avertissement utilisateur",
   };
@@ -160,7 +163,7 @@ function applyNavPermissions() {
 }
 
 function firstAllowedPage() {
-  const order = ["dashboard", "support", "reports", "listings", "kyc", "users", "audit", "team", "trash"];
+  const order = ["dashboard", "support", "chat", "reports", "listings", "kyc", "users", "audit", "team", "trash"];
   const me = getMe();
   for (const p of order) {
     const perm = $(`.nav-item[data-page="${p}"]`)?.dataset?.perm;
@@ -186,6 +189,7 @@ async function refreshStats() {
 }
 
 function navigate(page) {
+  if (page !== "chat") stopChatPoll();
   const me = getMe();
   const btn = $(`.nav-item[data-page="${page}"]`);
   const perm = btn?.dataset?.perm;
@@ -209,6 +213,7 @@ async function loadPage(page) {
     if (page === "dashboard") {
       await renderDashboard();
     } else if (page === "support") await renderSupport();
+    else if (page === "chat") await renderChat();
     else if (page === "kyc") await renderKyc();
     else if (page === "reports") await renderReports();
     else if (page === "escrow") await renderEscrow();
@@ -265,6 +270,9 @@ async function renderDashboard() {
   }
   if (hasPerm(me, PERM.SUPPORT_VIEW)) {
     cards.push(statCard("Messages aide", s.support_unread, "support", s.support_unread > 0));
+  }
+  if (hasPerm(me, PERM.CHAT_VIEW)) {
+    cards.push(statCard("Chat équipe", s.chat_unread, "chat", s.chat_unread > 0));
   }
   if (hasPerm(me, PERM.ESCROW_VIEW)) {
     cards.push(statCard("Séquestres ouverts", s.escrow_open, "escrow", s.escrow_open > 0));
@@ -1068,6 +1076,269 @@ async function openSupportThread(userId) {
   }
 
   await refreshStats();
+}
+
+let chatSelectedRoomId = null;
+let chatPollTimer = null;
+
+function stopChatPoll() {
+  if (chatPollTimer) {
+    clearInterval(chatPollTimer);
+    chatPollTimer = null;
+  }
+}
+
+function startChatPoll() {
+  stopChatPoll();
+  if (currentPage !== "chat" || !chatSelectedRoomId) return;
+  chatPollTimer = setInterval(async () => {
+    if (currentPage !== "chat" || !chatSelectedRoomId) return;
+    try {
+      await openChatRoom(chatSelectedRoomId, { silent: true });
+      await refreshChatSidebar();
+    } catch {
+      /* ignore poll errors */
+    }
+  }, 5000);
+}
+
+function chatKindLabel(kind) {
+  if (kind === "general") return "Général";
+  if (kind === "group") return "Groupe";
+  return "Direct";
+}
+
+function chatKindIcon(kind) {
+  if (kind === "general") return "#";
+  if (kind === "group") return "👥";
+  return "💬";
+}
+
+async function refreshChatSidebar() {
+  const list = $("#chat-room-list");
+  if (!list) return;
+  const { items } = await api("/admin/chat/rooms");
+  if (!items.length) {
+    list.innerHTML = '<div class="empty">Aucun salon.</div>';
+    return;
+  }
+  list.innerHTML = items.map((r) => `
+    <button type="button" class="chat-room-item ${chatSelectedRoomId === r.id ? "active" : ""}" data-room="${r.id}">
+      <div class="chat-room-top">
+        <span class="chat-room-kind">${chatKindIcon(r.room_kind)}</span>
+        <strong>${escapeHtml(r.name)}</strong>
+        ${r.unread_count ? `<span class="nav-badge warn">${r.unread_count}</span>` : ""}
+      </div>
+      <div class="chat-room-preview">${escapeHtml(r.last_message || "—")}</div>
+      <div class="chat-room-meta">${formatDate(r.last_at)} · ${chatKindLabel(r.room_kind)}${r.member_count > 2 ? ` · ${r.member_count} membres` : ""}</div>
+    </button>
+  `).join("");
+  list.querySelectorAll(".chat-room-item").forEach((btn) => {
+    btn.addEventListener("click", () => openChatRoom(Number(btn.dataset.room)));
+  });
+}
+
+async function renderChat() {
+  stopChatPoll();
+  const me = getMe();
+  const canSend = hasPerm(me, PERM.CHAT_SEND);
+  const canCreateGroup = canCreateChatGroup(me);
+  const el = $("#page-chat");
+  el.innerHTML = `
+    <p class="panel-hint chat-intro">
+      Messagerie interne entre administrateurs et modérateurs.
+      ${canCreateGroup ? "Seul le super administrateur peut créer des groupes." : "Contactez le super administrateur pour créer un groupe."}
+    </p>
+    <div class="chat-desk">
+      <div class="panel chat-list-panel">
+        <div class="panel-head chat-list-head">
+          <span>Salons</span>
+          <div class="chat-list-actions">
+            <button type="button" class="btn btn-ghost btn-sm" id="chat-new-dm-btn" title="Message direct">💬</button>
+            ${canCreateGroup ? `<button type="button" class="btn btn-primary btn-sm" id="chat-new-group-btn">+ Groupe</button>` : ""}
+          </div>
+        </div>
+        <div id="chat-room-list" class="chat-room-list"><div class="empty">Chargement…</div></div>
+      </div>
+      <div class="panel chat-thread-panel">
+        <div class="panel-head" id="chat-thread-title">Sélectionnez un salon</div>
+        <div id="chat-thread-members" class="chat-thread-members" hidden></div>
+        <div id="chat-thread-body" class="chat-thread-body">
+          <div class="empty">Choisissez un salon à gauche ou démarrez une conversation.</div>
+        </div>
+        ${canSend ? `
+          <form id="chat-reply-form" class="chat-reply-form" hidden>
+            <textarea id="chat-reply-input" rows="2" maxlength="4000" placeholder="Écrire un message…" required></textarea>
+            <div class="chat-reply-actions">
+              <button type="submit" class="btn btn-primary">Envoyer</button>
+            </div>
+          </form>
+        ` : ""}
+      </div>
+    </div>
+  `;
+
+  $("#chat-new-dm-btn")?.addEventListener("click", () => openChatDmModal());
+  $("#chat-new-group-btn")?.addEventListener("click", () => openChatGroupModal());
+
+  await refreshChatSidebar();
+  if (chatSelectedRoomId) {
+    await openChatRoom(chatSelectedRoomId);
+  } else {
+    const { items } = await api("/admin/chat/rooms");
+    const pick = items.find((r) => r.unread_count > 0) || items.find((r) => r.room_kind === "general") || items[0];
+    if (pick) await openChatRoom(pick.id);
+  }
+  startChatPoll();
+}
+
+async function openChatDmModal() {
+  const { items } = await api("/admin/chat/staff");
+  if (!items.length) {
+    toast("Aucun autre membre du staff.", true);
+    return;
+  }
+  openModal(
+    "Nouveau message direct",
+    `<p class="panel-hint">Choisissez un collègue du staff.</p>
+     <div class="chat-staff-pick">
+       ${items.map((u) => `
+         <button type="button" class="chat-staff-item" data-staff="${u.id}">
+           <strong>${escapeHtml(u.display_name)}</strong>
+           <small>${escapeHtml(u.role_label || u.role)}</small>
+         </button>
+       `).join("")}
+     </div>`,
+    "",
+    { wide: true },
+  );
+  $$(".chat-staff-item").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        const data = await api("/admin/chat/dm", {
+          method: "POST",
+          body: JSON.stringify({ user_id: Number(btn.dataset.staff) }),
+        });
+        closeModal();
+        chatSelectedRoomId = data.id;
+        await renderChat();
+      } catch (ex) {
+        toast(ex.message, true);
+      }
+    });
+  });
+}
+
+async function openChatGroupModal() {
+  const { items } = await api("/admin/chat/staff");
+  openModal(
+    "Nouveau groupe",
+    `<form id="chat-group-form" class="chat-group-form">
+       <label>Nom du groupe
+         <input name="name" type="text" required maxlength="120" placeholder="Ex. Modération, Ops…">
+       </label>
+       <fieldset>
+         <legend>Membres du staff</legend>
+         ${items.length ? items.map((u) => `
+           <label class="chat-member-check">
+             <input type="checkbox" name="member" value="${u.id}">
+             ${escapeHtml(u.display_name)} <small>(${escapeHtml(u.role_label || u.role)})</small>
+           </label>
+         `).join("") : '<p class="empty">Aucun autre membre staff.</p>'}
+       </fieldset>
+     </form>`,
+    `<button type="button" class="btn btn-ghost" id="chat-group-cancel">Annuler</button>
+     <button type="submit" form="chat-group-form" class="btn btn-primary">Créer le groupe</button>`,
+    { wide: true },
+  );
+  $("#chat-group-cancel")?.addEventListener("click", closeModal);
+  $("#chat-group-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const name = form.name.value.trim();
+    const member_ids = [...form.querySelectorAll('input[name="member"]:checked')].map((el) => Number(el.value));
+    if (!name) return toast("Nom requis.", true);
+    if (!member_ids.length) return toast("Sélectionnez au moins un membre.", true);
+    try {
+      const data = await api("/admin/chat/groups", {
+        method: "POST",
+        body: JSON.stringify({ name, member_ids }),
+      });
+      closeModal();
+      toast(`Groupe « ${name} » créé.`);
+      chatSelectedRoomId = data.id;
+      await renderChat();
+    } catch (ex) {
+      toast(ex.message, true);
+    }
+  });
+}
+
+async function openChatRoom(roomId, { silent = false } = {}) {
+  chatSelectedRoomId = roomId;
+  $$(".chat-room-item").forEach((b) => b.classList.toggle("active", Number(b.dataset.room) === roomId));
+
+  const title = $("#chat-thread-title");
+  const membersEl = $("#chat-thread-members");
+  const body = $("#chat-thread-body");
+  const form = $("#chat-reply-form");
+  if (!silent) body.innerHTML = '<div class="empty">Chargement…</div>';
+
+  const data = await api(`/admin/chat/rooms/${roomId}/messages`);
+  title.innerHTML = `
+    <span>${escapeHtml(data.room.name)}</span>
+    <small>${chatKindLabel(data.room.room_kind)}</small>
+  `;
+
+  if (data.room.room_kind === "group" && data.members?.length) {
+    membersEl.hidden = false;
+    membersEl.innerHTML = data.members.map((m) =>
+      `<span class="chat-member-chip">${escapeHtml(m.display_name)}</span>`,
+    ).join("");
+  } else {
+    membersEl.hidden = true;
+    membersEl.innerHTML = "";
+  }
+
+  if (!data.items.length) {
+    body.innerHTML = '<div class="empty">Aucun message — soyez le premier à écrire.</div>';
+  } else {
+    const me = getMe();
+    body.innerHTML = data.items.map((m) => `
+      <div class="chat-bubble ${m.is_mine || m.sender_id === me?.id ? "from-me" : "from-peer"}">
+        <div class="chat-bubble-meta">${escapeHtml(m.sender_name)} · ${formatDate(m.created_at)}</div>
+        <div class="chat-bubble-text">${escapeHtml(m.content).replace(/\n/g, "<br>")}</div>
+      </div>
+    `).join("");
+    body.scrollTop = body.scrollHeight;
+  }
+
+  if (form) {
+    form.hidden = false;
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const input = $("#chat-reply-input");
+      const content = input.value.trim();
+      if (!content) return;
+      try {
+        await api(`/admin/chat/rooms/${roomId}/messages`, {
+          method: "POST",
+          body: JSON.stringify({ content }),
+        });
+        input.value = "";
+        await openChatRoom(roomId);
+        await refreshChatSidebar();
+        await refreshStats();
+      } catch (ex) {
+        toast(ex.message, true);
+      }
+    };
+  }
+
+  if (!silent) {
+    await refreshStats();
+    startChatPoll();
+  }
 }
 
 async function renderTeam() {

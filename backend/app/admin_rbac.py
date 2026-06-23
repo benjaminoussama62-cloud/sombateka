@@ -25,6 +25,9 @@ PERM_SUPPORT_VIEW = "support.view"
 PERM_SUPPORT_REPLY = "support.reply"
 PERM_TRASH_VIEW = "trash.view"
 PERM_TRASH_MANAGE = "trash.manage"
+PERM_CHAT_VIEW = "chat.view"
+PERM_CHAT_SEND = "chat.send"
+PERM_CHAT_CREATE_GROUP = "chat.create_group"
 
 ROLE_LABELS: dict[UserRole, str] = {
     UserRole.super_admin: "Super administrateur",
@@ -43,6 +46,8 @@ ROLE_PERMISSIONS: dict[UserRole, frozenset[str]] = {
             PERM_ESCROW_VIEW,
             PERM_SUPPORT_VIEW,
             PERM_SUPPORT_REPLY,
+            PERM_CHAT_VIEW,
+            PERM_CHAT_SEND,
         }
     ),
     UserRole.admin: frozenset(
@@ -61,6 +66,8 @@ ROLE_PERMISSIONS: dict[UserRole, frozenset[str]] = {
             PERM_ESCROW_RESOLVE,
             PERM_SUPPORT_VIEW,
             PERM_SUPPORT_REPLY,
+            PERM_CHAT_VIEW,
+            PERM_CHAT_SEND,
         }
     ),
     UserRole.super_admin: frozenset(
@@ -85,6 +92,9 @@ ROLE_PERMISSIONS: dict[UserRole, frozenset[str]] = {
             PERM_SUPPORT_REPLY,
             PERM_TRASH_VIEW,
             PERM_TRASH_MANAGE,
+            PERM_CHAT_VIEW,
+            PERM_CHAT_SEND,
+            PERM_CHAT_CREATE_GROUP,
         }
     ),
 }

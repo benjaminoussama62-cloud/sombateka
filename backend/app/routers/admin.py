@@ -18,6 +18,7 @@ from app.admin_rbac import (
     PERM_REPORTS_WRITE,
     PERM_SUPPORT_REPLY,
     PERM_SUPPORT_VIEW,
+    PERM_CHAT_VIEW,
     PERM_TEAM_MANAGE,
     PERM_TEAM_VIEW,
     PERM_USERS_BAN,
@@ -224,6 +225,11 @@ def admin_stats(
         )
     if has_permission(staff.role, PERM_SUPPORT_VIEW):
         out["support_unread"] = count_unread_support(db)
+    if has_permission(staff.role, PERM_CHAT_VIEW):
+        from app.services.admin_chat import count_unread_chat
+
+        out["chat_unread"] = count_unread_chat(db, staff)
+        db.commit()
     return out
 
 

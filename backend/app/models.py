@@ -504,3 +504,46 @@ class HiddenConversation(Base):
     peer_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     listing_id: Mapped[int | None] = mapped_column(ForeignKey("listings.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class AdminChatRoom(Base):
+    """Salons de discussion internes entre membres du staff."""
+
+    __tablename__ = "admin_chat_rooms"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    room_kind: Mapped[str] = mapped_column(String(16), index=True)  # general | group | dm
+    dm_key: Mapped[str | None] = mapped_column(String(32), nullable=True, unique=True, index=True)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    members: Mapped[list["AdminChatMember"]] = relationship(back_populates="room")
+    messages: Mapped[list["AdminChatMessage"]] = relationship(back_populates="room")
+
+
+class AdminChatMember(Base):
+    __tablename__ = "admin_chat_members"
+    __table_args__ = (UniqueConstraint("room_id", "user_id", name="uq_admin_chat_member"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    room_id: Mapped[int] = mapped_column(ForeignKey("admin_chat_rooms.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    last_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    room: Mapped["AdminChatRoom"] = relationship(back_populates="members")
+    user: Mapped["User"] = relationship()
+
+
+class AdminChatMessage(Base):
+    __tablename__ = "admin_chat_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    room_id: Mapped[int] = mapped_column(ForeignKey("admin_chat_rooms.id"), index=True)
+    sender_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    content: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
+
+    room: Mapped["AdminChatRoom"] = relationship(back_populates="messages")
+    sender: Mapped["User"] = relationship()
