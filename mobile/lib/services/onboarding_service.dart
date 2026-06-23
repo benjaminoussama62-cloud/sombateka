@@ -6,7 +6,8 @@ enum AppTourPage {
   cart('tour_cart'),
   publish('tour_publish'),
   messages('tour_messages'),
-  profile('tour_profile');
+  profile('tour_profile'),
+  search('tour_search');
 
   const AppTourPage(this.key);
   final String key;
@@ -69,6 +70,13 @@ class OnboardingService {
         emoji: '👤',
         title: 'Votre profil',
         body: 'Gérez vos annonces, vos favoris, la confidentialité et le centre d\'aide depuis Paramètres.',
+      ),
+    ],
+    AppTourPage.search: [
+      AppTourStep(
+        emoji: '📷',
+        title: 'Recherche par photo',
+        body: 'Prenez une photo ou importez depuis la galerie pour retrouver un article visuellement similaire sur SombaTeka.',
       ),
     ],
   };

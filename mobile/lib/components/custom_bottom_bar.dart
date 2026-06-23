@@ -86,9 +86,9 @@ class _CustomBottomBarState extends State<CustomBottomBar> with TickerProviderSt
                 index: 0,
               ),
               _buildNavItem(
-                icon: Icons.favorite_border_rounded,
-                activeIcon: Icons.favorite_rounded,
-                label: 'Favoris',
+                icon: Icons.shopping_bag_outlined,
+                activeIcon: Icons.shopping_bag_rounded,
+                label: 'Panier',
                 index: 1,
               ),
               _buildPublishButton(),

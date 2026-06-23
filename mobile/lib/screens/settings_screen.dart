@@ -998,66 +998,131 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  void _showHelpCenter() {
-    showDialog(
+  void _showHelpCenter() => _showSupportHub();
+
+  void _showSupportContact() => _showSupportHub();
+
+  void _showSupportHub() {
+    showModalBottomSheet<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Centre d'aide"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.chat_rounded, color: AppColors.primary),
-              title: const Text('Centre d\'aide SombaTeka'),
-              subtitle: const Text('Messages, décisions et assistance'),
-              onTap: () {
-                Navigator.pop(context);
-                _openTeamChat();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.notifications_rounded),
-              title: const Text('Notifications'),
-              subtitle: const Text('Alertes KYC, modération, avertissements'),
-              onTap: () => Navigator.pop(context),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Fermer"),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + MediaQuery.of(ctx).padding.bottom),
+        child: Material(
+          borderRadius: PremiumTheme.radiusLg,
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(20),
+                decoration: PremiumTheme.heroGradient,
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.support_agent_rounded, color: Colors.white, size: 28),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Centre d\'aide SombaTeka', style: PremiumTheme.display.copyWith(fontSize: 18)),
+                          Text(
+                            'Assistance, modération et comptes pro',
+                            style: PremiumTheme.body.copyWith(color: Colors.white70, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    _supportHubTile(
+                      icon: Icons.chat_rounded,
+                      title: 'Écrire au support',
+                      subtitle: 'Posez votre question — réponse sous le nom SombaTeka',
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _openTeamChat();
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    _supportHubTile(
+                      icon: Icons.info_outline_rounded,
+                      title: 'Messagerie (onglet Messages)',
+                      subtitle: 'Lecture seule : consultez les réponses officielles',
+                      onTap: () => Navigator.pop(ctx),
+                    ),
+                    const SizedBox(height: 10),
+                    _supportHubTile(
+                      icon: Icons.notifications_rounded,
+                      title: 'Notifications',
+                      subtitle: 'Alertes KYC, commandes et décisions',
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        Navigator.pushNamed(context, AppRoutes.notifications);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 
-  void _showSupportContact() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Contacter le support"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.chat_rounded, color: AppColors.primary),
-              title: const Text('Centre d\'aide SombaTeka'),
-              subtitle: const Text('Discussion directe dans l\'app'),
-              onTap: () {
-                Navigator.pop(context);
-                _openTeamChat();
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Fermer"),
+  Widget _supportHubTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: const Color(0xFFF8FAFC),
+      borderRadius: PremiumTheme.radiusMd,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: PremiumTheme.radiusMd,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: PremiumTheme.blue.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: PremiumTheme.blue, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: PremiumTheme.h1.copyWith(fontSize: 14)),
+                    Text(subtitle, style: PremiumTheme.label.copyWith(fontSize: 11)),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: PremiumTheme.textMuted),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

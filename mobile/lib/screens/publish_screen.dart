@@ -144,7 +144,7 @@ class PublishScreenState extends State<PublishScreen> {
                   color: Colors.white.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: const Icon(Icons.auto_awesome_rounded, color: PremiumTheme.gold, size: 22),
+                child: const Icon(Icons.add_a_photo_rounded, color: Colors.white, size: 22),
               ),
             ],
           ),

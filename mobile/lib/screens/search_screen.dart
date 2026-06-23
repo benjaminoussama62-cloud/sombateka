@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../services/onboarding_service.dart';
+import '../widgets/app_tour_overlay.dart';
 import '../widgets/marketplace_product_card.dart';
 import '../widgets/marketplace_filter_sheet.dart';
 import '../theme/premium_theme.dart';
@@ -46,6 +48,9 @@ class _SearchScreenState extends State<SearchScreen> {
     super.initState();
     _init();
     _searchController.addListener(_onQueryChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AppTourPresenter.maybeShow(context, AppTourPage.search);
+    });
   }
 
   Future<void> _init() async {
@@ -304,7 +309,7 @@ class _SearchScreenState extends State<SearchScreen> {
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
           child: Text(
             _imageSearchActive
-                ? 'Résultats IA · photo similaire'
+                ? 'Résultats · photo similaire'
                 : '${results.length} résultat${results.length > 1 ? 's' : ''}',
             style: PremiumTheme.h1.copyWith(fontSize: 16),
           ),
@@ -351,7 +356,7 @@ class _SearchScreenState extends State<SearchScreen> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.auto_awesome_rounded, color: PremiumTheme.gold, size: 12),
+                            const Icon(Icons.photo_camera_rounded, color: Colors.white, size: 12),
                             const SizedBox(width: 4),
                             Text(
                               '${(sim * 100).round()}%',
@@ -387,7 +392,7 @@ class _SearchScreenState extends State<SearchScreen> {
           Text('Catégories', style: PremiumTheme.h1.copyWith(fontSize: 17)),
           const SizedBox(height: 4),
           Text(
-            'SombaTeka IA — photo ou galerie pour trouver le même produit',
+            'Recherche visuelle SombaTeka — photo ou galerie pour trouver un produit similaire',
             style: PremiumTheme.body.copyWith(fontSize: 12),
           ),
           const SizedBox(height: 14),
@@ -565,10 +570,10 @@ class _SearchScreenState extends State<SearchScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Recherche IA par photo', style: PremiumTheme.h1.copyWith(fontSize: 18)),
+              Text('Recherche par photo', style: PremiumTheme.h1.copyWith(fontSize: 18)),
               const SizedBox(height: 6),
               Text(
-                'Cadrez un seul produit — SombaTeka analyse forme, couleurs et textures.',
+                'Cadrez un seul produit — SombaTeka compare forme, couleurs et textures.',
                 style: PremiumTheme.body.copyWith(fontSize: 12),
               ),
               const SizedBox(height: 16),
