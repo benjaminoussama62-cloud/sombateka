@@ -5,7 +5,7 @@ import sqlalchemy as sa
 
 
 revision = "008_trash_corbeille"
-down_revision = "007_order_payment_channel"
+down_revision = "007"
 branch_labels = None
 depends_on = None
 
