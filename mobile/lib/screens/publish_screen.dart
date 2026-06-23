@@ -54,16 +54,6 @@ class PublishScreenState extends State<PublishScreen> {
   void initState() {
     super.initState();
     _loadCategories();
-    _checkOfficial();
-  }
-
-  bool _isOfficialSeller = false;
-
-  Future<void> _checkOfficial() async {
-    await _data.refreshUser();
-    final verified = _data.currentUser?['is_verified_seller'] == true ||
-        _data.currentUser?['isVerified'] == true;
-    if (mounted) setState(() => _isOfficialSeller = verified);
   }
 
   Future<void> _loadCategories() async {
@@ -140,9 +130,9 @@ class PublishScreenState extends State<PublishScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Publier', style: PremiumTheme.display.copyWith(fontSize: 22)),
+                    Text('Vendre — particulier', style: PremiumTheme.display.copyWith(fontSize: 22)),
                     Text(
-                      _step == 0 ? 'Ajoutez des photos attractives' : 'Détails de votre annonce',
+                      _step == 0 ? 'Photos claires = plus de contacts' : 'Décrivez bien votre article',
                       style: PremiumTheme.body.copyWith(color: Colors.white70, fontSize: 13),
                     ),
                   ],
@@ -220,89 +210,69 @@ class PublishScreenState extends State<PublishScreen> {
           onAdd: _pickImage,
           onRemove: (i) => setState(() => _photos.removeAt(i)),
         ),
-        if (_isOfficialSeller) ...[
-          const SizedBox(height: 16),
-          _officialCatalogBanner(),
-        ] else ...[
-          const SizedBox(height: 16),
-          _typeSelector(),
-        ],
+        const SizedBox(height: 16),
+        _particularTips(),
+        const SizedBox(height: 16),
+        _typeSelector(),
       ],
     );
   }
 
-  Widget _officialCatalogBanner() {
-    return Material(
-      color: PremiumTheme.gold.withValues(alpha: 0.12),
-      borderRadius: PremiumTheme.radiusMd,
-      child: InkWell(
-        onTap: () => Navigator.pushNamed(context, AppRoutes.officialCatalogPublish),
+  Widget _particularTips() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: PremiumTheme.blue.withValues(alpha: 0.08),
         borderRadius: PremiumTheme.radiusMd,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
+        border: Border.all(color: PremiumTheme.blue.withValues(alpha: 0.2)),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              const Icon(Icons.storefront_rounded, color: PremiumTheme.gold, size: 32),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Publication catalogue officielle', style: PremiumTheme.h1.copyWith(fontSize: 14)),
-                    Text(
-                      'Plusieurs tailles & stocks dans une annonce (Wildberries)',
-                      style: PremiumTheme.body.copyWith(fontSize: 11),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(Icons.chevron_right_rounded, color: PremiumTheme.gold),
+              Icon(Icons.tips_and_updates_outlined, color: PremiumTheme.blue, size: 18),
+              SizedBox(width: 8),
+              Text('Conseil vendeur', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
             ],
           ),
-        ),
+          SizedBox(height: 6),
+          Text(
+            '• 3 à 5 photos sous différents angles\n'
+            '• Prix honnête et description exacte\n'
+            '• Commune + quartier pour être trouvé',
+            style: TextStyle(fontSize: 11, color: Color(0xFF475569), height: 1.4),
+          ),
+        ],
       ),
     );
   }
 
   Widget _typeSelector() {
-    return Row(
-      children: [
-        Expanded(child: _typeChip('C2C — Contact', ListingType.contact, Icons.chat_bubble_outline_rounded)),
-        const SizedBox(width: 10),
-        Expanded(child: _typeChip('Officiel — Paiement MM', ListingType.payment, Icons.payments_rounded)),
-      ],
-    );
-  }
-
-  Widget _typeChip(String label, String type, IconData icon) {
-    final sel = _listingType == type;
-    return GestureDetector(
-      onTap: () => setState(() => _listingType = type),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: sel ? PremiumTheme.blue.withValues(alpha: 0.1) : Colors.white,
-          borderRadius: PremiumTheme.radiusMd,
-          border: Border.all(color: sel ? PremiumTheme.blue : AppColors.border, width: sel ? 2 : 1),
-          boxShadow: sel ? PremiumTheme.softShadow : null,
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: sel ? PremiumTheme.blue : AppColors.textSecondary, size: 20),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: sel ? PremiumTheme.blue : const Color(0xFF0F172A),
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0FDF4),
+        borderRadius: PremiumTheme.radiusMd,
+        border: Border.all(color: const Color(0xFFBBF7D0)),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.chat_bubble_outline_rounded, color: PremiumTheme.emerald, size: 22),
+          SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Vente entre particuliers', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
+                Text(
+                  'Les acheteurs vous contactent par message. Pas de paiement in-app.',
+                  style: TextStyle(fontSize: 10, color: Color(0xFF64748B)),
                 ),
-              ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

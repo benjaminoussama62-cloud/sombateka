@@ -11,6 +11,29 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Split-Path $PSScriptRoot -Parent
 $Archive = Join-Path $env:TEMP "sombateka-deploy.tar.gz"
+$SshOpts = @("-4", "-o", "ConnectTimeout=30", "-o", "ServerAliveInterval=15", "-o", "StrictHostKeyChecking=accept-new")
+
+function Test-SshPort {
+    param([string]$HostIp, [int]$Port = 22)
+    try {
+        $t = Test-NetConnection -ComputerName $HostIp -Port $Port -WarningAction SilentlyContinue
+        return [bool]$t.TcpTestSucceeded
+    } catch {
+        return $false
+    }
+}
+
+function Write-SshTroubleshoot {
+    param([string]$HostIp)
+    Write-Host ""
+    Write-Host "Depannage SSH (erreur Windows 'Unknown error' frequente) :" -ForegroundColor Yellow
+    Write-Host "  1. Test manuel : ssh -4 -v ${User}@${HostIp}"
+    Write-Host "  2. Evitez partage 4G instable — preferez Wi-Fi stable"
+    Write-Host "  3. Desactivez VPN / antivirus qui bloque OpenSSH"
+    Write-Host "  4. Console DigitalOcean : Droplet -> Access -> Launch Droplet Console"
+    Write-Host "  5. Firewall DO : Networking -> Firewalls -> autoriser SSH (22) depuis votre IP"
+    Write-Host "  6. Upload manuel WinSCP : fichier -> /root/sombateka-deploy.tar.gz puis -DeployOnly"
+}
 
 Write-Host ""
 Write-Host "================================================" -ForegroundColor Cyan
@@ -63,11 +86,20 @@ finally {
 
 Write-Host ""
 if (-not $DeployOnly) {
+Write-Host "[2/4] Test connexion SSH (port 22)..." -ForegroundColor Yellow
+if (-not (Test-SshPort -HostIp $VpsIp)) {
+    Write-Host "      Port 22 inaccessible depuis ce reseau." -ForegroundColor Red
+    Write-SshTroubleshoot -HostIp $VpsIp
+    exit 1
+}
+Write-Host "      Port 22 OK" -ForegroundColor Green
+
 Write-Host "[2/4] Upload vers le serveur..." -ForegroundColor Yellow
 Write-Host "      -> Saisissez le mot de passe root DigitalOcean quand demande" -ForegroundColor DarkGray
-scp $Archive "${User}@${VpsIp}:/root/sombateka-deploy.tar.gz"
+& scp @SshOpts $Archive "${User}@${VpsIp}:/root/sombateka-deploy.tar.gz"
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "ERREUR upload SCP. Verifiez IP, mot de passe, port 22 ouvert." -ForegroundColor Red
+    Write-Host "ERREUR upload SCP." -ForegroundColor Red
+    Write-SshTroubleshoot -HostIp $VpsIp
     exit 1
 }
 Write-Host "      Upload OK" -ForegroundColor Green
@@ -95,13 +127,14 @@ bash scripts/update-vps.sh --domain DOMAIN_PLACEHOLDER
 '@
 $RemoteScript = $RemoteScript -replace "DOMAIN_PLACEHOLDER", $Domain
 
-$RemoteScript | ssh "${User}@${VpsIp}" "bash -s"
+$RemoteScript | & ssh @SshOpts "${User}@${VpsIp}" "bash -s"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "ERREUR deploiement. Connectez-vous manuellement:" -ForegroundColor Red
-    Write-Host "  ssh root@$VpsIp"
+    Write-Host "  ssh -4 ${User}@$VpsIp"
     Write-Host "  cd /root/SombaTeka && bash scripts/update-vps.sh --domain $Domain"
+    Write-SshTroubleshoot -HostIp $VpsIp
     exit 1
 }
 

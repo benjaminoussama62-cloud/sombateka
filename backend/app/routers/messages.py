@@ -18,8 +18,8 @@ router = APIRouter(prefix="/messages", tags=["messages"])
 
 
 def _helpdesk_peer(peer: User) -> bool:
-    """Fil unique sans annonce (vendeur officiel ou équipe SombaTeka)."""
-    return peer.role in (UserRole.official_seller, UserRole.support)
+    """Fil unique sans annonce — équipe support SombaTeka uniquement."""
+    return is_team_user(peer) or peer.role == UserRole.support
 
 
 def _public_upload_url(key: str) -> str:

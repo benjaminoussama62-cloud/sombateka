@@ -12,6 +12,7 @@ import 'screens/auth_screen.dart';
 import 'screens/otp_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/search_screen.dart';
+import 'screens/publish_tab_router.dart';
 import 'screens/publish_screen.dart';
 import 'screens/favorites_screen.dart';
 import 'screens/edit_profile_screen.dart';
@@ -203,7 +204,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
   final _favoritesKey = GlobalKey<FavoritesScreenState>();
   final _homeKey = GlobalKey<HomeScreenState>();
   final _profileKey = GlobalKey<ProfileScreenState>();
-  final _publishKey = GlobalKey<PublishScreenState>();
+  final _publishKey = GlobalKey<PublishTabRouterState>();
   late final List<Widget> _pages;
 
   void _openCartTab() {
@@ -218,7 +219,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
     _pages = [
       HomeScreen(key: _homeKey, onOpenCart: _openCartTab),
       FavoritesScreen(key: _favoritesKey),
-      PublishScreen(
+      PublishTabRouter(
         key: _publishKey,
         onPublished: _afterPublishSuccess,
         onGoHome: _goHomeTab,
@@ -255,6 +256,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
     setState(() => _currentIndex = index);
     _pageController.jumpToPage(index);
     if (index == 0) _homeKey.currentState?.reloadListings();
+    if (index == 2) _publishKey.currentState?.refreshRole();
     if (index == 4) _profileKey.currentState?.reloadProfile();
   }
 
@@ -268,6 +270,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
           setState(() => _currentIndex = index);
           if (index == 0) _homeKey.currentState?.refreshCartBadge();
           if (index == 4) _profileKey.currentState?.reloadProfile();
+          if (index == 2) _publishKey.currentState?.refreshRole();
         },
         children: _pages,
       ),

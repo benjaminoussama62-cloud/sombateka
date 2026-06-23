@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../theme/premium_theme.dart';
 
-/// Galerie plein écran (style Wildberries) avec option « Voir similaires ».
+/// Galerie plein écran avec option « Voir similaires ».
 void openFullscreenGallery(
   BuildContext context, {
   required List<String> imageUrls,

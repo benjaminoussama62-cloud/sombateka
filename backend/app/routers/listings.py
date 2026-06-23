@@ -17,6 +17,7 @@ from app.schemas import (
     ListingDetailPublic,
     ListingImagePublic,
     OfficialCatalogCreateRequest,
+    OfficialCollectionCreateRequest,
 )
 from app.services.storage import UPLOAD_DIR, public_url, save_image
 
@@ -62,6 +63,75 @@ def _audience_key(label: str) -> str:
     if "enfant" in l:
         return "enfant"
     return "adulte"
+
+
+def _parse_catalog_variants(raw_variants: list[dict]) -> tuple[list[dict], list[int]]:
+    variants: list[dict] = []
+    prices: list[int] = []
+    for raw in raw_variants:
+        size = str(raw.get("size") or "").strip()
+        price = int(raw.get("price_cdf") or 0)
+        stock = int(raw.get("stock") or 0)
+        if not size or price <= 0:
+            continue
+        entry: dict = {"size": size, "price_cdf": price, "stock": max(0, stock)}
+        color = str(raw.get("color") or "").strip()
+        if color:
+            entry["color"] = color
+        variants.append(entry)
+        prices.append(price)
+    return variants, prices
+
+
+def _build_catalog_attrs(
+    *,
+    brand: str,
+    gender: str,
+    audience: str,
+    variants: list[dict],
+    condition: str | None = None,
+    default_color: str | None = None,
+    commune: str | None = None,
+    quartier: str | None = None,
+    province: str | None = None,
+    avenue: str | None = None,
+    numero: str | None = None,
+    publication_id: str | None = None,
+    publication_title: str | None = None,
+    product_index: int | None = None,
+) -> dict:
+    sizes = [v["size"] for v in variants]
+    colors = list({v["color"] for v in variants if v.get("color")})
+    attrs: dict = {
+        "catalog": True,
+        "brand": brand.strip(),
+        "gender": _gender_key(gender),
+        "audience": _audience_key(audience),
+        "variants": variants,
+        "available_sizes": sizes,
+        "available_colors": colors,
+    }
+    if condition:
+        attrs["condition"] = condition.strip()
+    if default_color:
+        attrs["color"] = default_color.strip()
+    if commune:
+        attrs["commune"] = commune.strip()
+    if quartier:
+        attrs["quartier"] = quartier.strip()
+    if province:
+        attrs["province"] = province.strip()
+    if avenue:
+        attrs["avenue"] = avenue.strip()
+    if numero:
+        attrs["numero"] = numero.strip()
+    if publication_id:
+        attrs["publication_id"] = publication_id
+    if publication_title:
+        attrs["publication_title"] = publication_title
+    if product_index is not None:
+        attrs["product_index"] = product_index
+    return attrs
 
 
 @router.post("/")
@@ -125,21 +195,7 @@ def create_official_catalog(
     if current_user.role != UserRole.official_seller and not current_user.is_verified_seller:
         raise HTTPException(status_code=403, detail="Compte officiel requis")
 
-    variants: list[dict] = []
-    prices: list[int] = []
-    for raw in payload.variants:
-        size = str(raw.get("size") or "").strip()
-        price = int(raw.get("price_cdf") or 0)
-        stock = int(raw.get("stock") or 0)
-        if not size or price <= 0:
-            continue
-        entry: dict = {"size": size, "price_cdf": price, "stock": max(0, stock)}
-        color = str(raw.get("color") or "").strip()
-        if color:
-            entry["color"] = color
-        variants.append(entry)
-        prices.append(price)
-
+    variants, prices = _parse_catalog_variants(payload.variants)
     if not variants:
         raise HTTPException(status_code=400, detail="Ajoutez au moins une variante (taille + prix)")
 
@@ -149,32 +205,19 @@ def create_official_catalog(
     description = payload.description.strip() if payload.description else None
     assert_content_allowed(title=title, description=description)
 
-    sizes = [v["size"] for v in variants]
-    colors = list({v["color"] for v in variants if v.get("color")})
-
-    attrs = {
-        "catalog": True,
-        "brand": payload.brand.strip(),
-        "gender": _gender_key(payload.gender),
-        "audience": _audience_key(payload.audience),
-        "variants": variants,
-        "available_sizes": sizes,
-        "available_colors": colors,
-    }
-    if payload.condition:
-        attrs["condition"] = payload.condition.strip()
-    if payload.default_color:
-        attrs["color"] = payload.default_color.strip()
-    if payload.commune:
-        attrs["commune"] = payload.commune.strip()
-    if payload.quartier:
-        attrs["quartier"] = payload.quartier.strip()
-    if payload.province:
-        attrs["province"] = payload.province.strip()
-    if payload.avenue:
-        attrs["avenue"] = payload.avenue.strip()
-    if payload.numero:
-        attrs["numero"] = payload.numero.strip()
+    attrs = _build_catalog_attrs(
+        brand=payload.brand,
+        gender=payload.gender,
+        audience=payload.audience,
+        variants=variants,
+        condition=payload.condition,
+        default_color=payload.default_color,
+        commune=payload.commune,
+        quartier=payload.quartier,
+        province=payload.province,
+        avenue=payload.avenue,
+        numero=payload.numero,
+    )
 
     listing = Listing(
         title=title,
@@ -208,6 +251,89 @@ def create_official_catalog(
         raise
 
 
+@router.post("/official-collection")
+def create_official_collection(
+    payload: OfficialCollectionCreateRequest,
+    idem: tuple[str, User, Session] = Depends(require_idempotency_key),
+) -> dict:
+    """Publication multi-produits Wildberries — chaque produit devient une annonce au fil."""
+    idem_key, current_user, db = idem
+    if current_user.role != UserRole.official_seller and not current_user.is_verified_seller:
+        raise HTTPException(status_code=403, detail="Compte officiel requis")
+
+    from app.services.moderation import assert_content_allowed
+
+    pub_title = payload.publication_title.strip()
+    assert_content_allowed(title=pub_title, description=None)
+    publication_id = str(uuid.uuid4())
+
+    listing_ids: list[int] = []
+    for idx, product in enumerate(payload.products):
+        variants, prices = _parse_catalog_variants(product.variants)
+        if not variants:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Produit « {product.title.strip()} » : ajoutez au moins une taille avec prix",
+            )
+        title = product.title.strip()
+        description = product.description.strip() if product.description else None
+        assert_content_allowed(title=title, description=description)
+
+        attrs = _build_catalog_attrs(
+            brand=payload.brand,
+            gender=payload.gender,
+            audience=payload.audience,
+            variants=variants,
+            condition=product.condition,
+            default_color=product.default_color,
+            commune=payload.commune,
+            quartier=payload.quartier,
+            province=payload.province,
+            avenue=payload.avenue,
+            numero=payload.numero,
+            publication_id=publication_id,
+            publication_title=pub_title,
+            product_index=idx,
+        )
+        listing = Listing(
+            title=title,
+            description=description,
+            city=payload.city.strip(),
+            price_cdf=min(prices),
+            category_id=payload.category_id,
+            attributes=json.dumps(attrs, ensure_ascii=False),
+            delivery_method=payload.delivery_method,
+            status=ListingStatus.active,
+            seller_id=current_user.id,
+            updated_at=datetime.utcnow(),
+        )
+        db.add(listing)
+        db.flush()
+        listing_ids.append(listing.id)
+
+    try:
+        db.commit()
+        resp = {
+            "publication_id": publication_id,
+            "publication_title": pub_title,
+            "listing_ids": listing_ids,
+            "product_count": len(listing_ids),
+        }
+        save_idempotency_response(
+            db=db,
+            user_id=current_user.id,
+            key=idem_key,
+            method="POST",
+            path="/listings/official-collection",
+            status_code=200,
+            response_body=resp,
+        )
+        return resp
+    except Exception:
+        db.rollback()
+        raise
+
+
 @router.get("")
 def list_listings(
     q: str | None = Query(default=None, max_length=80),
@@ -226,6 +352,7 @@ def list_listings(
     quartier: str | None = Query(default=None, max_length=80),
     province: str | None = Query(default=None, max_length=80),
     min_rating: float | None = Query(default=None, ge=1, le=5),
+    mix_promoted: bool = Query(default=False, description="Fil accueil : intercale les comptes officiels promus"),
     limit: int = Query(default=30, ge=1, le=100),
     offset: int = Query(default=0, ge=0, le=10000),
     db: Session = Depends(get_db),
@@ -290,7 +417,12 @@ def list_listings(
         stmt = stmt.where(Listing.price_cdf <= max_price)
 
     if is_official is True:
-        stmt = stmt.where(User.is_verified_seller.is_(True))
+        stmt = stmt.where(
+            or_(
+                User.is_verified_seller.is_(True),
+                User.role == UserRole.official_seller,
+            )
+        )
 
     if q:
         qq = q.strip()
@@ -339,7 +471,14 @@ def list_listings(
         stmt = stmt.join(rating_subq, User.id == rating_subq.c.uid)
         stmt = stmt.where(rating_subq.c.avg_rating >= min_rating)
 
-    stmt = stmt.order_by(desc(Listing.created_at)).offset(offset).limit(limit)
+    stmt = stmt.order_by(desc(Listing.created_at))
+    fetch_limit = limit
+    fetch_offset = offset
+    if mix_promoted:
+        fetch_limit = min(200, max(limit * 4, 80))
+        fetch_offset = 0
+
+    stmt = stmt.offset(fetch_offset).limit(fetch_limit)
     rows = db.execute(stmt).all()
 
     seller_ids = {r.seller_id for r in rows}
@@ -369,31 +508,36 @@ def list_listings(
         ).all()
         for lid, key in img_rows:
             bucket = images_map.setdefault(int(lid), [])
-            if len(bucket) < 8:
+            if len(bucket) < 12:
                 bucket.append(_public_upload_url(key))
 
-    return {
-        "items": [
-            {
-                "id": r.id,
-                "title": r.title,
-                "city": r.city,
-                "price_cdf": r.price_cdf,
-                "seller_id": r.seller_id,
-                "created_at": r.created_at,
-                "category_id": r.category_id,
-                "category_name": cat_map.get(r.category_id) if r.category_id else None,
-                "attributes": r.attributes,
-                "is_official": bool(r.is_verified_seller),
-                "seller_rating": rating_map.get(r.seller_id, 0.0),
-                "primary_image_url": (_public_upload_url(r.primary_image_key) if r.primary_image_key else None),
-                "image_urls": images_map.get(r.id) or (
-                    [_public_upload_url(r.primary_image_key)] if r.primary_image_key else []
-                ),
-            }
-            for r in rows
-        ]
-    }
+    items = [
+        {
+            "id": r.id,
+            "title": r.title,
+            "city": r.city,
+            "price_cdf": r.price_cdf,
+            "seller_id": r.seller_id,
+            "created_at": r.created_at,
+            "category_id": r.category_id,
+            "category_name": cat_map.get(r.category_id) if r.category_id else None,
+            "attributes": r.attributes,
+            "is_official": bool(r.is_verified_seller) or r.role == UserRole.official_seller,
+            "seller_rating": rating_map.get(r.seller_id, 0.0),
+            "primary_image_url": (_public_upload_url(r.primary_image_key) if r.primary_image_key else None),
+            "image_urls": images_map.get(r.id) or (
+                [_public_upload_url(r.primary_image_key)] if r.primary_image_key else []
+            ),
+        }
+        for r in rows
+    ]
+
+    if mix_promoted:
+        from app.services.feed_mix import mix_promoted_feed
+
+        items = mix_promoted_feed(items, limit=limit, offset=offset)
+
+    return {"items": items}
 
 
 @router.get("/mine")
@@ -453,6 +597,7 @@ async def search_by_image(
     db: Session = Depends(get_db),
 ) -> dict:
     from app.services.image_search import find_similar_listings
+    from app.services.storage import load_image_bytes
 
     data = await file.read()
     if len(data) < 50:
@@ -468,11 +613,14 @@ async def search_by_image(
     listings = db.scalars(stmt).all()
 
     candidates: list[tuple[Listing, list[str]]] = []
+    loadable = 0
     for listing in listings:
         if not listing.images:
             continue
         keys = [img.key for img in sorted(listing.images, key=lambda i: i.id)]
         candidates.append((listing, keys))
+        if keys and load_image_bytes(keys[0]):
+            loadable += 1
 
     top = find_similar_listings(data, candidates)
 
@@ -498,8 +646,7 @@ async def search_by_image(
         "items": items,
         "message": None
         if items
-        else "Aucun article similaire n'est disponible sur SombaTeka pour cette photo. "
-        "Essayez une photo nette, cadrée sur un seul produit.",
+        else "Aucun article similaire pour cette photo. Cadrez un seul produit, lumière naturelle, fond neutre — SombaTeka IA analyse forme et couleurs.",
     }
 
 

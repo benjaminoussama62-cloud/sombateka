@@ -97,6 +97,31 @@ class OfficialCatalogCreateRequest(BaseModel):
     delivery_method: str = Field(..., pattern="^(own_courier|pickup_store)$")
 
 
+class OfficialCollectionProduct(BaseModel):
+    title: str = Field(..., min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=8000)
+    variants: list[dict] = Field(..., min_length=1)
+    condition: str | None = Field(default=None, max_length=40)
+    default_color: str | None = Field(default=None, max_length=40)
+
+
+class OfficialCollectionCreateRequest(BaseModel):
+    """Publication multi-produits (Wildberries) — chaque produit = une annonce au fil."""
+    publication_title: str = Field(..., min_length=1, max_length=120)
+    city: str = Field(..., min_length=1, max_length=80)
+    category_id: int | None = None
+    brand: str = Field(..., min_length=1, max_length=80)
+    gender: str = Field(..., min_length=1, max_length=20)
+    audience: str = Field(..., min_length=1, max_length=20)
+    commune: str | None = Field(default=None, max_length=80)
+    quartier: str | None = Field(default=None, max_length=80)
+    avenue: str | None = Field(default=None, max_length=120)
+    numero: str | None = Field(default=None, max_length=32)
+    province: str | None = Field(default=None, max_length=80)
+    delivery_method: str = Field(..., pattern="^(own_courier|pickup_store)$")
+    products: list[OfficialCollectionProduct] = Field(..., min_length=1, max_length=40)
+
+
 class ListingCreateRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=120)
     city: str = Field(..., min_length=1, max_length=80)

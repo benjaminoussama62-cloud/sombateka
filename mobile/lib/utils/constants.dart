@@ -128,6 +128,7 @@ class AppRoutes {
   static const String detail = '/detail';
   static const String similarProducts = '/similar-products';
   static const String officialCatalogPublish = '/official-catalog-publish';
+  static const String businessHub = '/business-hub';
   static const String settings = '/settings';
   static const String payment = '/payment';
   static const String chat = '/chat';

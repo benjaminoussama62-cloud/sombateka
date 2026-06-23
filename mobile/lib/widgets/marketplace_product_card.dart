@@ -120,6 +120,7 @@ class _MarketplaceProductCardState extends State<MarketplaceProductCard>
     final province = l['province']?.toString() ?? RdcLocations.guessProvince(l);
     final locationLabel = _locationLabel(province, location);
     final isNew = _isNewListing(l);
+    final promoted = l['promoted'] == true;
     final verified = l['isVerified'] == true;
     final size = l['size']?.toString() ?? '';
     final isOwn = l['isOwnListing'] == true;
@@ -149,7 +150,7 @@ class _MarketplaceProductCardState extends State<MarketplaceProductCard>
             ),
             child: widget.compact
                 ? _compactBody(title, price, urls, verified, size, isOwn)
-                : _gridBody(title, price, urls, locationLabel, verified, size, isOwn, isNew),
+                : _gridBody(title, price, urls, locationLabel, verified, size, isOwn, isNew, promoted),
           ),
         ),
       ),
@@ -185,6 +186,7 @@ class _MarketplaceProductCardState extends State<MarketplaceProductCard>
     String size,
     bool isOwn,
     bool isNew,
+    bool promoted,
   ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -199,6 +201,7 @@ class _MarketplaceProductCardState extends State<MarketplaceProductCard>
             showFavorite: !isOwn,
             fillHeight: true,
             isNew: isNew,
+            promoted: promoted,
           ),
         ),
         Padding(
@@ -269,6 +272,7 @@ class _MarketplaceProductCardState extends State<MarketplaceProductCard>
     bool showFavorite = true,
     bool fillHeight = false,
     bool isNew = false,
+    bool promoted = false,
   }) {
     final primary = imageUrls.isNotEmpty ? imageUrls.first : '';
     final carousel = _shouldCarousel && imageUrls.length >= 2;
@@ -349,6 +353,19 @@ class _MarketplaceProductCardState extends State<MarketplaceProductCard>
               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
               decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.55), borderRadius: BorderRadius.circular(5)),
               child: Text(size, style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w800)),
+            ),
+          ),
+        if (promoted && verified && !isOwn)
+          Positioned(
+            top: isNew ? 28 : 5,
+            right: 5,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(colors: [Color(0xFF6B21A5), Color(0xFFD946EF)]),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Text('Promu', style: TextStyle(fontSize: 7, fontWeight: FontWeight.w900, color: Colors.white)),
             ),
           ),
         if (verified && !isOwn)

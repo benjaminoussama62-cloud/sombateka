@@ -4,7 +4,7 @@ import '../theme/premium_theme.dart';
 import '../utils/date_format.dart';
 import 'review_sheet.dart';
 
-/// Bloc avis style Wildberries : note publique, commentaires réservés aux acheteurs.
+/// Bloc avis : note publique, commentaires réservés aux acheteurs.
 class ListingReviewsSection extends StatelessWidget {
   const ListingReviewsSection({
     super.key,

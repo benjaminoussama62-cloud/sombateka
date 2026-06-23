@@ -140,6 +140,16 @@ def consume_catalog_stock(
     listing.attributes = json.dumps(attrs, ensure_ascii=False)
 
 
+def publication_id(attrs: dict[str, Any]) -> str | None:
+    pid = attrs.get("publication_id")
+    return str(pid).strip() if pid else None
+
+
+def publication_title(attrs: dict[str, Any]) -> str | None:
+    pt = attrs.get("publication_title")
+    return str(pt).strip() if pt else None
+
+
 def replace_catalog_variants(listing: Listing, variants: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Remplace les variantes catalogue (admin / vendeur officiel)."""
     cleaned: list[dict[str, Any]] = []

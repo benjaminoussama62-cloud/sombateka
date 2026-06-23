@@ -8,9 +8,9 @@ from typing import Any
 
 from app.services.image_search import MIN_COMBINED, best_image_similarity_keys
 
-MIN_SCORE = 0.60
-MIN_IMAGE = 0.68
-MIN_IMAGE_CROSS_CATEGORY = 0.74
+MIN_SCORE = 0.56
+MIN_IMAGE = 0.58
+MIN_IMAGE_CROSS_CATEGORY = 0.66
 MAX_RESULTS = 24
 
 

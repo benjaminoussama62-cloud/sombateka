@@ -32,6 +32,7 @@ class ListingsRepository {
     String? commune,
     String? quartier,
     String? province,
+    bool mixPromoted = false,
   }) async {
     try {
       final conn = await Connectivity().checkConnectivity();
@@ -57,7 +58,8 @@ class ListingsRepository {
           if (minRating != null && minRating > 0) 'min_rating': minRating,
           if (commune != null && commune.isNotEmpty) 'commune': commune,
           if (quartier != null && quartier.isNotEmpty) 'quartier': quartier,
-          'limit': 50,
+          if (mixPromoted) 'mix_promoted': true,
+          'limit': mixPromoted ? 80 : 100,
         },
       );
       final items = (r.data?['items'] as List?) ?? [];
@@ -136,6 +138,48 @@ class ListingsRepository {
       idempotent: true,
     );
     return (r.data?['id'] as int?) ?? 0;
+  }
+
+  Future<({String publicationId, List<int> listingIds})> createOfficialCollection({
+    required String publicationTitle,
+    required String city,
+    int? categoryId,
+    required String brand,
+    required String gender,
+    required String audience,
+    String? commune,
+    String? quartier,
+    String? avenue,
+    String? numero,
+    String? province,
+    required String deliveryMethod,
+    required List<Map<String, dynamic>> products,
+  }) async {
+    final r = await _api.post<Map<String, dynamic>>(
+      '/listings/official-collection',
+      data: {
+        'publication_title': publicationTitle,
+        'city': city,
+        if (categoryId != null) 'category_id': categoryId,
+        'brand': brand,
+        'gender': gender,
+        'audience': audience,
+        'delivery_method': deliveryMethod,
+        if (province != null && province.isNotEmpty) 'province': province,
+        if (commune != null && commune.isNotEmpty) 'commune': commune,
+        if (quartier != null && quartier.isNotEmpty) 'quartier': quartier,
+        if (avenue != null && avenue.isNotEmpty) 'avenue': avenue,
+        if (numero != null && numero.isNotEmpty) 'numero': numero,
+        'products': products,
+      },
+      idempotent: true,
+    );
+    final pubId = r.data?['publication_id']?.toString() ?? '';
+    final ids = ((r.data?['listing_ids'] as List?) ?? [])
+        .map((e) => int.tryParse(e.toString()) ?? 0)
+        .where((id) => id > 0)
+        .toList();
+    return (publicationId: pubId, listingIds: ids);
   }
 
   Future<List<Map<String, dynamic>>> fetchMyListings() async {

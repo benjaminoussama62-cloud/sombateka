@@ -12,7 +12,7 @@ import '../utils/date_format.dart';
 import '../widgets/conversation_actions.dart';
 import '../widgets/review_sheet.dart';
 
-/// Discussion liée à une annonce (style Kufar) ou vendeur officiel.
+/// Discussion liée à une annonce ou vendeur officiel.
 class ChatScreen extends StatefulWidget {
   const ChatScreen({
     super.key,
@@ -51,7 +51,13 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _sending = false;
   Map<String, dynamic>? _reviewEligibility;
 
-  bool get _isHelpdesk => widget.isOfficialPeer || widget.isTeamPeer;
+  bool get _isHelpdesk => widget.isTeamPeer;
+
+  bool get _isSellerInbox {
+    final me = _data.currentUser;
+    if (me == null) return false;
+    return me['is_verified_seller'] == true || me['status'] == AppStatus.official;
+  }
 
   static const _quickReplies = [
     'Comment puis-je récupérer l\'article ?',
@@ -289,7 +295,7 @@ class _ChatScreenState extends State<ChatScreen> {
       body: Column(
         children: [
           _header(),
-          if (widget.listingTitle != null && widget.listingTitle!.isNotEmpty) _listingBanner(),
+          if (!_isHelpdesk && widget.listingTitle != null && widget.listingTitle!.isNotEmpty) _listingBanner(),
           Expanded(child: _loading ? const Center(child: CircularProgressIndicator(color: PremiumTheme.blue)) : _messageList()),
           if (!_loading && _messages.isEmpty) _quickReplyBar(),
           ChatInput(
@@ -328,12 +334,25 @@ class _ChatScreenState extends State<ChatScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(widget.peerName, style: PremiumTheme.display.copyWith(fontSize: 18), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(
+                      _isSellerInbox && !_isHelpdesk
+                          ? (widget.listingTitle?.isNotEmpty == true ? widget.listingTitle! : widget.peerName)
+                          : widget.peerName,
+                      style: PremiumTheme.display.copyWith(fontSize: 17),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     Text(
                       widget.isTeamPeer
                           ? 'Centre d\'aide SombaTeka'
-                          : (widget.isOfficialPeer ? 'Boutique officielle' : 'Discussion sur l\'annonce'),
+                          : _isSellerInbox
+                              ? 'Acheteur · ${widget.peerName}'
+                              : (widget.isOfficialPeer
+                                  ? 'Boutique officielle · ${widget.listingTitle ?? 'Produit'}'
+                                  : 'Discussion sur l\'annonce'),
                       style: PremiumTheme.body.copyWith(color: Colors.white70, fontSize: 11),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
@@ -346,6 +365,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   peerId: widget.peerId,
                   listingId: widget.listingId,
                   isOfficialPeer: widget.isOfficialPeer,
+                  isTeamPeer: widget.isTeamPeer,
                   onChanged: () async {
                     await _initChat();
                     if (mounted) setState(() {});
@@ -387,13 +407,21 @@ class _ChatScreenState extends State<ChatScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Annonce', style: PremiumTheme.label.copyWith(fontSize: 10)),
+                    Text(
+                      _isSellerInbox ? 'Produit concerné' : 'Annonce',
+                      style: PremiumTheme.label.copyWith(fontSize: 10),
+                    ),
                     Text(
                       widget.listingTitle!,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
                     ),
+                    if (_isSellerInbox)
+                      Text(
+                        'Acheteur : ${widget.peerName}',
+                        style: PremiumTheme.label.copyWith(fontSize: 11, color: PremiumTheme.blue),
+                      ),
                   ],
                 ),
               ),

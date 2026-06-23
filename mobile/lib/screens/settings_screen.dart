@@ -6,6 +6,7 @@ import '../utils/constants.dart';
 import '../services/data_service.dart';
 import '../widgets/user_avatar.dart';
 import '../widgets/legal_document_sheet.dart';
+import 'business_hub_screen.dart';
 import 'chat_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -23,6 +24,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _appVersion = '';
 
   Map<String, dynamic>? get _user => _dataService.currentUser;
+
+  bool get _isOfficialSeller =>
+      _user != null &&
+      (_user!['is_verified_seller'] == true || _user!['status'] == AppStatus.official);
 
   @override
   void initState() {
@@ -74,11 +79,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             _buildAccountCard(),
             const SizedBox(height: 20),
+            if (_isOfficialSeller) ...[
+              _buildSection(
+                'Boutique Pro',
+                [
+                  _buildMenuItem(
+                    'Espace Pro',
+                    Icons.dashboard_rounded,
+                    PremiumTheme.blue,
+                    () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const BusinessHubScreen()),
+                    ),
+                  ),
+                  _buildMenuItem(
+                    'Publier une collection',
+                    Icons.grid_view_rounded,
+                    PremiumTheme.emerald,
+                    () => Navigator.pushNamed(context, AppRoutes.officialCatalogPublish),
+                  ),
+                  _buildMenuItem(
+                    'Paiements & Mobile Money',
+                    Icons.payments_rounded,
+                    PremiumTheme.gold,
+                    () => Navigator.pushNamed(context, AppRoutes.paymentSettings),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+            ],
             _buildSection(
-              "Compte",
+              'Compte',
               [
                 _buildMenuItem(
-                  "Modifier profil",
+                  'Modifier profil',
                   Icons.edit_rounded,
                   AppColors.primary,
                   () async {
@@ -86,17 +120,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     if (ok == true) _load();
                   },
                 ),
+                if (!_isOfficialSeller)
+                  _buildMenuItem(
+                    'Devenir vendeur officiel',
+                    Icons.store_rounded,
+                    AppColors.gold,
+                    () async {
+                      await Navigator.pushNamed(context, AppRoutes.officialSeller);
+                      _load();
+                    },
+                  ),
                 _buildMenuItem(
-                  "Devenir vendeur officiel",
-                  Icons.store_rounded,
-                  AppColors.gold,
-                  () async {
-                    await Navigator.pushNamed(context, AppRoutes.officialSeller);
-                    _load();
-                  },
-                ),
-                _buildMenuItem(
-                  "Supprimer mon compte",
+                  'Supprimer mon compte',
                   Icons.delete_forever_rounded,
                   AppColors.danger,
                   _deleteAccount,
@@ -155,27 +190,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 24),
             
             // Payment section
-            _buildSection(
-              "Paiement",
-              [
-                _buildMenuItem(
-                  "Méthodes de paiement",
-                  Icons.payment_rounded,
-                  AppColors.textPrimary,
-                  () => Navigator.pushNamed(context, AppRoutes.paymentSettings),
-                ),
-                _buildMenuItem(
-                  "Historique des transactions",
-                  Icons.history_rounded,
-                  AppColors.textPrimary,
-                  () {
-                    _showTransactionHistory();
-                  },
-                ),
-              ],
-            ),
-            
-            const SizedBox(height: 24),
+            if (!_isOfficialSeller)
+              _buildSection(
+                "Paiement",
+                [
+                  _buildMenuItem(
+                    "Méthodes de paiement",
+                    Icons.payment_rounded,
+                    AppColors.textPrimary,
+                    () => Navigator.pushNamed(context, AppRoutes.paymentSettings),
+                  ),
+                  _buildMenuItem(
+                    "Historique des transactions",
+                    Icons.history_rounded,
+                    AppColors.textPrimary,
+                    () {
+                      _showTransactionHistory();
+                    },
+                  ),
+                ],
+              ),
+            if (!_isOfficialSeller) const SizedBox(height: 24),
+            if (_isOfficialSeller)
+              _buildSection(
+                'Commandes',
+                [
+                  _buildMenuItem(
+                    'Historique des ventes',
+                    Icons.receipt_long_rounded,
+                    PremiumTheme.blue,
+                    _showTransactionHistory,
+                  ),
+                ],
+              ),
+            if (_isOfficialSeller) const SizedBox(height: 24),
             
             // Support section
             _buildSection(
@@ -286,26 +334,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final u = _user;
     final name = _dataService.profileDisplayName(u);
     final phone = u?['phone_e164']?.toString() ?? '—';
-    final role = u?['role']?.toString() ?? 'user';
-    final verified = u?['is_verified_seller'] == true;
-    String kycLabel = 'Aucune demande KYC';
+    final verified = _isOfficialSeller;
+    String kycLabel = 'Compte particulier';
     Color kycColor = PremiumTheme.textMuted;
     if (verified) {
-      kycLabel = 'Vendeur officiel certifié';
-      kycColor = PremiumTheme.emerald;
+      kycLabel = 'Boutique officielle certifiée';
+      kycColor = PremiumTheme.gold;
     } else if (_kyc != null) {
       final st = _kyc!['status']?.toString() ?? '';
-      kycLabel = 'KYC: $st — ${_kyc!['business_name']}';
+      kycLabel = 'Demande KYC : $st';
       kycColor = st == 'pending' ? PremiumTheme.gold : (st == 'rejected' ? AppColors.danger : PremiumTheme.blue);
     }
 
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [PremiumTheme.navy, PremiumTheme.blue.withValues(alpha: 0.85)],
+        gradient: const LinearGradient(
+          colors: [PremiumTheme.navy, Color(0xFF1E3A8A), PremiumTheme.blue],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
         borderRadius: PremiumTheme.radiusLg,
+        boxShadow: PremiumTheme.softShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -327,10 +377,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ],
                 ),
               ),
+              if (verified)
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: PremiumTheme.gold.withValues(alpha: 0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.verified_rounded, color: PremiumTheme.gold, size: 20),
+                ),
             ],
           ),
           const SizedBox(height: 12),
-          Text(kycLabel, style: TextStyle(color: kycColor, fontWeight: FontWeight.w600, fontSize: 12)),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(kycLabel, style: TextStyle(color: kycColor, fontWeight: FontWeight.w700, fontSize: 11)),
+          ),
           const SizedBox(height: 14),
           Row(
             children: [
@@ -351,14 +417,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Expanded(
                 child: ElevatedButton(
                   onPressed: () async {
-                    await Navigator.pushNamed(context, AppRoutes.officialSeller);
+                    if (_isOfficialSeller) {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const BusinessHubScreen()),
+                      );
+                    } else {
+                      await Navigator.pushNamed(context, AppRoutes.officialSeller);
+                    }
                     _load();
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: PremiumTheme.gold,
                     foregroundColor: PremiumTheme.navy,
                   ),
-                  child: const Text('Vendeur pro'),
+                  child: Text(_isOfficialSeller ? 'Espace Pro' : 'Vendeur pro'),
                 ),
               ),
             ],
@@ -402,20 +475,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            color: AppColors.textPrimary,
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 10),
+          child: Text(
+            title,
+            style: PremiumTheme.h1.copyWith(fontSize: 16),
           ),
         ),
-        const SizedBox(height: 12),
         Container(
           decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(AppConstants.borderRadius),
-            border: Border.all(color: AppColors.border),
+            color: Colors.white,
+            borderRadius: PremiumTheme.radiusMd,
+            border: Border.all(color: const Color(0xFFE8ECF4)),
+            boxShadow: PremiumTheme.softShadow,
           ),
           child: Column(
             children: items,

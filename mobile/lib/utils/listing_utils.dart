@@ -3,6 +3,18 @@ import 'constants.dart';
 import 'listing_attributes.dart';
 import 'rdc_locations.dart';
 
+/// Annonce boutique officielle / catalogue (pas particulier).
+bool isProListing(Map<String, dynamic> listing) {
+  if (listing['is_official'] == true || listing['isOfficial'] == true || listing['isVerified'] == true) {
+    return true;
+  }
+  if (listing['listingType'] == ListingType.payment) return true;
+  if (ListingAttributes.isCatalogListing(listing['attributes'])) return true;
+  final pid = listing['publicationId']?.toString() ??
+      ListingAttributes.publicationId(listing['attributes']);
+  return pid != null && pid.isNotEmpty && !pid.startsWith('solo_');
+}
+
 /// Normalise une annonce API → map sûr pour l’UI (plus de null sur String).
 Map<String, dynamic> normalizeListing(
   Map<String, dynamic> raw, {
@@ -45,6 +57,11 @@ Map<String, dynamic> normalizeListing(
   final own = currentUserId != null && sellerIdStr.isNotEmpty && sellerIdStr == currentUserId;
   final province = RdcLocations.parseProvince(raw['attributes']) ?? RdcLocations.guessProvince(raw);
 
+  final attrs = raw['attributes'];
+  final catalog = ListingAttributes.isCatalogListing(attrs);
+  final pubId = ListingAttributes.publicationId(attrs);
+  final apiOfficial = raw['is_official'] == true;
+
   return {
     ...raw,
     'id': idStr,
@@ -59,8 +76,10 @@ Map<String, dynamic> normalizeListing(
     'listingType': (raw['is_official'] == true || raw['listingType'] == ListingType.payment)
         ? ListingType.payment
         : ListingType.contact,
-    'isOfficial': raw['is_official'] == true,
-    'isVerified': raw['is_official'] == true || raw['isVerified'] == true,
+    'isOfficial': apiOfficial ||
+        catalog ||
+        (pubId != null && pubId.isNotEmpty && !pubId.startsWith('solo_')),
+    'isVerified': apiOfficial || raw['isVerified'] == true || catalog,
     'seller_id': raw['seller_id']?.toString() ?? '',
     'sellerId': raw['seller_id']?.toString() ?? raw['sellerId']?.toString() ?? '',
     'sellerName': _str(raw['seller_name'] ?? raw['sellerName'], 'Vendeur'),
@@ -72,6 +91,9 @@ Map<String, dynamic> normalizeListing(
     'attributes': raw['attributes'],
     'size': raw['size']?.toString() ?? ListingAttributes.parseSize(raw['attributes']),
     'isOwnListing': own,
+    'promoted': raw['promoted'] == true,
+    'publicationId': ListingAttributes.publicationId(raw['attributes']),
+    'publicationTitle': ListingAttributes.publicationTitle(raw['attributes']),
   };
 }
 

@@ -267,8 +267,34 @@ class ListingAttributes {
     return variants.fold<int>(0, (s, v) => s + ((v['stock'] as num?)?.toInt() ?? 0));
   }
 
+  static int stockForSize(dynamic attributes, String size, {String? color}) {
+    for (final v in catalogVariants(attributes)) {
+      if (v['size']?.toString() != size) continue;
+      if (color != null && color.isNotEmpty && v['color']?.toString() != color) continue;
+      return (v['stock'] as num?)?.toInt() ?? 0;
+    }
+    return 0;
+  }
+
+  static int priceForSize(dynamic attributes, String size, {String? color}) {
+    for (final v in catalogVariants(attributes)) {
+      if (v['size']?.toString() != size) continue;
+      if (color != null && color.isNotEmpty && v['color']?.toString() != color) continue;
+      return (v['price_cdf'] as num?)?.toInt() ?? 0;
+    }
+    return 0;
+  }
+
   static bool isCatalogListing(dynamic attributes) {
     return decodeMap(attributes)?['catalog'] == true;
+  }
+
+  static String? publicationId(dynamic attributes) {
+    return decodeMap(attributes)?['publication_id']?.toString();
+  }
+
+  static String? publicationTitle(dynamic attributes) {
+    return decodeMap(attributes)?['publication_title']?.toString();
   }
 
   static List<Map<String, dynamic>> catalogVariants(dynamic attributes) {

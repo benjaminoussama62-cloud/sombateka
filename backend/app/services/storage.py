@@ -38,6 +38,29 @@ def delete_local_key(key: str | None) -> None:
         path.unlink(missing_ok=True)
 
 
+def load_image_bytes(key: str) -> bytes | None:
+    """Charge une image listing (disque local ou URL publique S3/CDN)."""
+    if not key:
+        return None
+    path = UPLOAD_DIR.joinpath(*key.split("/"))
+    if path.is_file():
+        try:
+            return path.read_bytes()
+        except OSError:
+            pass
+    try:
+        import httpx
+
+        url = public_url(key)
+        with httpx.Client(timeout=20.0, follow_redirects=True) as client:
+            resp = client.get(url)
+            if resp.status_code == 200 and len(resp.content) > 50:
+                return resp.content
+    except Exception:
+        pass
+    return None
+
+
 async def save_kyc_document(
     *,
     application_id: int,

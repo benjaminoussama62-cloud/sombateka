@@ -8,16 +8,16 @@ class ApiConfig {
   ApiConfig._();
 
   static String get baseUrl {
+    const fromEnv = String.fromEnvironment('ST_API_BASE_URL');
+    if (fromEnv.isNotEmpty) {
+      return fromEnv.replaceAll(RegExp(r'/api/?$'), '');
+    }
+
     if (kIsWeb) {
       final fromWindow = getWebApiBaseUrl();
       if (fromWindow != null && fromWindow.isNotEmpty) {
         return fromWindow.replaceAll(RegExp(r'/api/?$'), '');
       }
-    }
-
-    const fromEnv = String.fromEnvironment('ST_API_BASE_URL');
-    if (fromEnv.isNotEmpty) {
-      return fromEnv.replaceAll(RegExp(r'/api/?$'), '');
     }
 
     if (kReleaseMode) return AppConfig.defaultProdApiUrl;

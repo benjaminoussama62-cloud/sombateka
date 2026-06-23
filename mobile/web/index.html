@@ -38,15 +38,18 @@
 
   <script>
     (function () {
+      var meta = document.querySelector('meta[name="st-api-base"]');
+      var configured = meta && meta.getAttribute('content');
+      if (configured) {
+        window.stApiBaseUrl = configured;
+        return;
+      }
       var loc = window.location;
       var host = loc.hostname;
-      var proto = loc.protocol || 'http:';
-      var port = loc.port ? parseInt(loc.port, 10) : (proto === 'https:' ? 443 : 80);
-      var apiPort = (port === 8000) ? port : 8000;
-      var origin = proto + '//' + host + ':' + apiPort;
-      window.stApiBaseUrl = origin;
-      var meta = document.querySelector('meta[name="st-api-base"]');
-      if (meta) meta.setAttribute('content', window.stApiBaseUrl);
+      if (host === 'localhost' || host === '127.0.0.1') {
+        var proto = loc.protocol || 'http:';
+        window.stApiBaseUrl = proto + '//' + host + ':8000';
+      }
     })();
   </script>
   

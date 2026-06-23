@@ -26,7 +26,7 @@ flutter build apk --release @defines
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "ERREUR: build APK echoue (code $LASTEXITCODE)." -ForegroundColor Red
-    Write-Host "Cause frequente: disque C: plein. Liberez de l'espace puis relancez." -ForegroundColor Yellow
+    Write-Host "Cause frequente: disque C: plein. Liberez de l espace puis relancez." -ForegroundColor Yellow
     exit $LASTEXITCODE
 }
 

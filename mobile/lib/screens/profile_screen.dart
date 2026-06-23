@@ -10,6 +10,7 @@ import '../utils/listing_utils.dart';
 import '../services/data_service.dart';
 import '../services/listing_actions.dart';
 import '../utils/app_feedback.dart';
+import 'business_hub_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -31,6 +32,13 @@ class ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMi
   Map<String, dynamic>? get _user => _dataService.currentUser;
 
   String? get _userId => _user?['id']?.toString();
+
+  bool get _isOfficial =>
+      _user != null &&
+      (_user!['is_verified_seller'] == true || _user!['status'] == AppStatus.official);
+
+  List<String> get _tabs =>
+      _isOfficial ? ['Mon catalogue', 'Favoris', 'Avis'] : ['Mes annonces', 'Favoris', 'Avis'];
 
   Map<String, dynamic> get _stats {
     final uid = _userId;
@@ -62,7 +70,6 @@ class ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMi
 
   // Getters manquants pour la compatibilité
   List<Map<String, dynamic>> get _myListings => _userListings;
-  List<String> get _tabs => ['Mes annonces', 'Favoris', 'Avis'];
 
   @override
   void initState() {
@@ -144,64 +151,112 @@ class ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMi
             ),
             if (_user != null)
               Padding(
-                padding: const EdgeInsets.all(16),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: (_user!['is_verified_seller'] == true || _user!['status'] == AppStatus.official)
-                        ? AppColors.gold
-                        : AppColors.background,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        (_user!['is_verified_seller'] == true || _user!['status'] == AppStatus.official)
-                            ? "Professionnel certifié"
-                            : "Particulier",
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                          color: (_user!['is_verified_seller'] == true || _user!['status'] == AppStatus.official) 
-                              ? AppColors.textPrimary 
-                              : AppColors.textSecondary,
-                        ),
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    decoration: BoxDecoration(
+                      gradient: _isOfficial
+                          ? const LinearGradient(colors: [PremiumTheme.gold, Color(0xFFF59E0B)])
+                          : null,
+                      color: _isOfficial ? null : PremiumTheme.surface,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: _isOfficial ? PremiumTheme.gold : const Color(0xFFE2E8F0),
                       ),
                     ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _isOfficial ? Icons.verified_rounded : Icons.person_outline_rounded,
+                          size: 16,
+                          color: _isOfficial ? PremiumTheme.navy : PremiumTheme.textMuted,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _isOfficial ? 'Boutique officielle SombaTeka' : 'Compte particulier',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            color: _isOfficial ? PremiumTheme.navy : PremiumTheme.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
-            
-            // Stats
+
+            if (_isOfficial) ...[
+              const SizedBox(height: 16),
+              _buildOfficialProPanel(),
+            ],
+
+            const SizedBox(height: 20),
             ScaleTransition(
               scale: _statsAnimation,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Row(
-                  children: [
-                    Expanded(
-                      child: _buildStatCard(
-                        '${_stats['totalListings']}',
-                        'Annonces',
-                        Icons.list_rounded,
-                        AppColors.primary,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: _buildStatCard(
-                        '${_stats['activeListings']}',
-                        'Actives',
-                        Icons.check_circle_outline,
-                        AppColors.secondary,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: _buildStatCard(
-                        '$_messageCount',
-                        'Messages',
-                        Icons.chat_rounded,
-                        AppColors.danger,
-                      ),
-                    ),
-                  ],
+                  children: _isOfficial
+                      ? [
+                          Expanded(
+                            child: _buildStatCard(
+                              '${_dataService.getBusinessDashboardStats()['productCount'] ?? 0}',
+                              'Produits',
+                              Icons.inventory_2_outlined,
+                              PremiumTheme.blue,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildStatCard(
+                              '${_dataService.getBusinessDashboardStats()['publicationCount'] ?? 0}',
+                              'Publications',
+                              Icons.collections_bookmark_outlined,
+                              PremiumTheme.emerald,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildStatCard(
+                              '$_messageCount',
+                              'Messages',
+                              Icons.chat_rounded,
+                              PremiumTheme.gold,
+                            ),
+                          ),
+                        ]
+                      : [
+                          Expanded(
+                            child: _buildStatCard(
+                              '${_stats['totalListings']}',
+                              'Annonces',
+                              Icons.list_rounded,
+                              AppColors.primary,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: _buildStatCard(
+                              '${_stats['activeListings']}',
+                              'Actives',
+                              Icons.check_circle_outline,
+                              AppColors.secondary,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: _buildStatCard(
+                              '$_messageCount',
+                              'Messages',
+                              Icons.chat_rounded,
+                              AppColors.danger,
+                            ),
+                          ),
+                        ],
                 ),
               ),
             ),
@@ -212,35 +267,29 @@ class ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMi
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 20),
               decoration: BoxDecoration(
-                color: AppColors.background,
-                borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+                color: Colors.white,
+                borderRadius: PremiumTheme.radiusMd,
+                border: Border.all(color: const Color(0xFFE8ECF4)),
               ),
               child: Row(
                 children: List.generate(_tabs.length, (index) {
                   return Expanded(
                     child: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _selectedTab = index;
-                        });
-                      },
-                      child: Container(
+                      onTap: () => setState(() => _selectedTab = index),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         decoration: BoxDecoration(
-                          color: _selectedTab == index 
-                              ? AppColors.primary 
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+                          color: _selectedTab == index ? PremiumTheme.blue : Colors.transparent,
+                          borderRadius: PremiumTheme.radiusMd,
                         ),
                         child: Text(
                           _tabs[index],
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            fontSize: 14,
+                            fontSize: 13,
                             fontWeight: FontWeight.w700,
-                            color: _selectedTab == index 
-                                ? Colors.white 
-                                : AppColors.textPrimary,
+                            color: _selectedTab == index ? Colors.white : PremiumTheme.textMuted,
                           ),
                         ),
                       ),
@@ -251,12 +300,12 @@ class ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMi
             ),
             
             const SizedBox(height: 20),
-            
+
             // Tab content
             _buildTabContent(),
             
             // Actions
-            if (_user != null && _user!['is_verified_seller'] != true && _user!['status'] != AppStatus.official)
+            if (!_isOfficial)
               Container(
                 margin: const EdgeInsets.all(20),
                 padding: const EdgeInsets.all(20),
@@ -323,6 +372,108 @@ class ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMi
             
             const SizedBox(height: 120),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOfficialProPanel() {
+    final stats = _dataService.getBusinessDashboardStats();
+    final shopName = _user?['official_name']?.toString().trim().isNotEmpty == true
+        ? _user!['official_name'].toString()
+        : _dataService.profileDisplayName(_user);
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [PremiumTheme.navy, Color(0xFF1E3A8A), PremiumTheme.blue],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: PremiumTheme.radiusLg,
+        boxShadow: PremiumTheme.softShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 0),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.storefront_rounded, color: PremiumTheme.gold, size: 24),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        shopName,
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        '${stats['productCount']} produits · ${stats['publicationCount']} publications · ${stats['totalStock']} en stock',
+                        style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 16),
+            child: Row(
+              children: [
+                Expanded(child: _proAction(Icons.dashboard_rounded, 'Espace Pro', () {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const BusinessHubScreen()));
+                })),
+                const SizedBox(width: 8),
+                Expanded(child: _proAction(Icons.grid_view_rounded, 'Collection', () {
+                  Navigator.pushNamed(context, AppRoutes.officialCatalogPublish);
+                })),
+                const SizedBox(width: 8),
+                Expanded(child: _proAction(Icons.payments_rounded, 'Paiements', () {
+                  Navigator.pushNamed(context, AppRoutes.paymentSettings);
+                })),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _proAction(IconData icon, String label, VoidCallback onTap) {
+    return Material(
+      color: Colors.white.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+          child: Column(
+            children: [
+              Icon(icon, color: Colors.white, size: 22),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -684,7 +835,7 @@ class ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMi
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Comme sur les grandes marketplaces, connectez-vous avec votre numéro de téléphone (OTP) pour accéder à votre profil, vos annonces et vos favoris.',
+                  'Connectez-vous avec votre numéro de téléphone (OTP) pour accéder à votre profil, vos annonces et vos favoris sur SombaTeka.',
                   style: PremiumTheme.body.copyWith(color: Colors.white70, height: 1.5),
                   textAlign: TextAlign.center,
                 ),

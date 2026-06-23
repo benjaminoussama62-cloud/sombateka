@@ -9,7 +9,7 @@ import '../theme/premium_theme.dart';
 import '../utils/constants.dart';
 import '../utils/responsive.dart';
 
-/// Favoris + panier (style Wildberries).
+/// Favoris + panier SombaTeka.
 class FavoritesScreen extends StatefulWidget {
   const FavoritesScreen({super.key, this.initialTab = 0});
 

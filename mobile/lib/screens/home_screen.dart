@@ -84,7 +84,7 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       _isLoading = true;
     });
     await PreferredProvinceService.instance.save(province);
-    await _dataService.refreshListings(province: _selectedProvince);
+    await _dataService.refreshListings(province: _selectedProvince, mixPromoted: true);
     if (mounted) setState(() => _isLoading = false);
   }
 
@@ -112,7 +112,7 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   Future<void> _loadData() async {
     try {
-      await _dataService.refreshListings(province: _selectedProvince);
+      await _dataService.refreshHomeFeeds(province: _selectedProvince);
       _recentlyViewed = await RecentlyViewedService.instance.load();
       if (await AppServices.instance.auth.hasSession()) {
         await _dataService.loadFavorites();
@@ -207,8 +207,8 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  List<Map<String, dynamic>> _filteredParticularListings() {
-    var items = _dataService.getParticularListings();
+  List<Map<String, dynamic>> _filteredHomeListings() {
+    var items = _dataService.getHomeFeedListings();
     if (_selectedCategory != 'Toutes') {
       items = items.where((l) => (l['category']?.toString() ?? '') == _selectedCategory).toList();
     }
@@ -520,12 +520,91 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
+  Widget _buildPromotedOfficialRow() {
+    final promoted = _dataService.getPromotedOfficialListings();
+    if (promoted.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(colors: [Color(0xFF6B21A5), Color(0xFFD946EF)]),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.verified_rounded, size: 14, color: Colors.white),
+                    SizedBox(width: 4),
+                    Text('Officiels promus', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Boutiques certifiées — visibilité garantie',
+                  style: TextStyle(fontSize: 10, color: AppColors.textSecondary.withValues(alpha: 0.9)),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: 198,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: promoted.length.clamp(0, 16),
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemBuilder: (_, i) {
+              final listing = promoted[i];
+              return SizedBox(
+                width: 132,
+                child: MarketplaceProductCard(
+                  listing: listing,
+                  compact: true,
+                  autoRotateImages: true,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => DetailScreen(listing: listing)),
+                    );
+                  },
+                  onFavorite: () async {
+                    await _dataService.toggleFavorite(listing['id']?.toString() ?? '');
+                    if (mounted) setState(() {});
+                  },
+                  onAddToCart: listing['isOwnListing'] == true
+                      ? null
+                      : () async {
+                          await CartUiHelper.addListing(context, listing, onViewCart: widget.onOpenCart);
+                          if (mounted) setState(() {});
+                        },
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
   Widget _buildParticularView() {
     if (_isLoading) {
       return _buildShimmerGrid();
     }
     
-    final listings = _filteredParticularListings();
+    final listings = _filteredHomeListings();
 
     if (listings.isEmpty) {
       return _buildEmptyCatalog(
@@ -626,94 +705,300 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     if (_isLoading) {
       return _buildShimmerGrid();
     }
-    
+
+    final publications = _dataService.getOfficialPublications();
     final professionals = _dataService.getProfessionalStores();
 
-    if (professionals.isEmpty) {
+    if (publications.isEmpty && professionals.isEmpty) {
       return _buildEmptyCatalog(
         icon: Icons.verified_outlined,
-        title: 'Aucune boutique professionnelle',
-        subtitle: 'Les vendeurs certifiés (KYC approuvé) apparaîtront ici',
+        title: 'Aucune boutique officielle',
+        subtitle: 'Les publications des comptes certifiés SombaTeka apparaîtront ici',
       );
     }
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Bannière premium
         Container(
-          margin: const EdgeInsets.all(16),
-          height: 140,
+          margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AppConstants.borderRadius),
             gradient: const LinearGradient(
-              colors: [Color(0xFF6B21A5), Color(0xFFD946EF)],
+              colors: [PremiumTheme.navy, Color(0xFF1E3A8A), PremiumTheme.blue],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
+            borderRadius: PremiumTheme.radiusLg,
+            boxShadow: PremiumTheme.softShadow,
           ),
-          child: Stack(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Positioned(
-                right: 20,
-                top: 20,
-                child: Icon(
-                  Icons.storefront_rounded,
-                  size: 80,
-                  color: Colors.white.withOpacity(0.2),
-                ),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.verified_rounded, size: 14, color: PremiumTheme.gold),
+                        SizedBox(width: 4),
+                        Text('SombaTeka Pro', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.verified, size: 14, color: Colors.white),
-                          SizedBox(width: 4),
-                          Text(
-                            'Boutiques officielles',
-                            style: TextStyle(color: Colors.white, fontSize: 12),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Spacer(),
-                    const Text(
-                      'Marques certifiées',
-                      style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Livraison garantie | Paiement sécurisé',
-                      style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 12),
-                    ),
-                  ],
-                ),
+              const SizedBox(height: 12),
+              Text(
+                '${publications.length} publication${publications.length > 1 ? 's' : ''} officielle${publications.length > 1 ? 's' : ''}',
+                style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900),
+              ),
+              Text(
+                'Collections multi-produits des boutiques certifiées',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 11),
               ),
             ],
           ),
         ),
-        
-        // Liste des boutiques professionnelles
+        if (professionals.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 88,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: professionals.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (_, i) => _buildProfessionalStoreChip(professionals[i]),
+            ),
+          ),
+        ],
+        const SizedBox(height: 8),
         Expanded(
           child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: professionals.length,
-            itemBuilder: (context, index) {
-              final store = professionals[index];
-              return _buildProfessionalStoreCard(store);
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            itemCount: publications.length + 1,
+            itemBuilder: (_, i) {
+              if (i == publications.length) {
+                return _buildOfficialProductsGrid();
+              }
+              return _buildOfficialPublicationCard(publications[i]);
             },
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildOfficialProductsGrid() {
+    final products = _dataService.getOfficialProductListings();
+    if (products.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 8, bottom: 12),
+          child: Text('Tous les produits officiels', style: PremiumTheme.h1.copyWith(fontSize: 16)),
+        ),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: Responsive.productGridColumns(context),
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: Responsive.productGridAspectRatio(context),
+          ),
+          itemCount: products.length,
+          itemBuilder: (_, index) {
+            final listing = products[index];
+            return MarketplaceProductCard(
+              listing: {...listing, 'promoted': true},
+              autoRotateImages: true,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => DetailScreen(listing: listing)),
+                );
+              },
+              onFavorite: () async {
+                await _dataService.toggleFavorite(listing['id']?.toString() ?? '');
+                if (mounted) setState(() {});
+              },
+              onAddToCart: listing['isOwnListing'] == true
+                  ? null
+                  : () async {
+                      await CartUiHelper.addListing(context, listing, onViewCart: widget.onOpenCart);
+                      if (mounted) setState(() {});
+                    },
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOfficialPublicationCard(Map<String, dynamic> pub) {
+    final products = (pub['products'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final title = pub['title']?.toString() ?? 'Publication';
+    final seller = pub['sellerName']?.toString() ?? 'Boutique officielle';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: PremiumTheme.radiusMd,
+        border: Border.all(color: const Color(0xFFE8ECF4)),
+        boxShadow: PremiumTheme.softShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: PremiumTheme.h1.copyWith(fontSize: 15), maxLines: 2, overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(Icons.storefront_rounded, size: 12, color: PremiumTheme.blue),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              seller,
+                              style: PremiumTheme.label.copyWith(fontSize: 11, color: PremiumTheme.blue),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const Icon(Icons.verified_rounded, size: 14, color: PremiumTheme.gold),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: PremiumTheme.blue.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '${products.length} prod.',
+                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: PremiumTheme.blue),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 130,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              itemCount: products.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (_, j) {
+                final listing = products[j];
+                return GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => DetailScreen(listing: listing)),
+                    );
+                  },
+                  child: SizedBox(
+                    width: 96,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: (listing['imageUrl']?.toString().isNotEmpty == true)
+                                ? Image.network(
+                                    listing['imageUrl'].toString(),
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => const ColoredBox(
+                                      color: Color(0xFFF1F5F9),
+                                      child: Icon(Icons.image_outlined, size: 28),
+                                    ),
+                                  )
+                                : const ColoredBox(
+                                    color: Color(0xFFF1F5F9),
+                                    child: Icon(Icons.image_outlined, size: 28),
+                                  ),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          listing['title']?.toString() ?? '',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700),
+                        ),
+                        Text(
+                          listing['price']?.toString() ?? '',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: PremiumTheme.blue),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfessionalStoreChip(Map<String, dynamic> store) {
+    return Container(
+      width: 140,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.storefront_rounded, size: 16, color: AppColors.primary),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  store['name']?.toString() ?? 'Boutique',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
+          const Spacer(),
+          Text(
+            '${store['totalListings'] ?? 0} article(s)',
+            style: TextStyle(fontSize: 10, color: AppColors.textSecondary.withValues(alpha: 0.9)),
+          ),
+        ],
+      ),
     );
   }
 

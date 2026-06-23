@@ -15,6 +15,8 @@ class MessagesScreen extends StatefulWidget {
 class _MessagesScreenState extends State<MessagesScreen> {
   final _data = DataService();
 
+  bool get _isSeller => _data.isOfficialSeller;
+
   List<Map<String, dynamic>> get _conversations {
     if (_data.currentUser == null) return [];
     return _data.getUserConversations(_data.currentUser!['id'].toString());
@@ -63,7 +65,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
                   children: [
                     Text('Messages', style: PremiumTheme.display.copyWith(fontSize: 22)),
                     Text(
-                      '${_conversations.length} conversations · 1 fil par annonce',
+                      _isSeller
+                          ? '${_conversations.length} discussions · produit + acheteur'
+                          : '${_conversations.length} conversations · 1 fil par produit',
                       style: PremiumTheme.body.copyWith(color: Colors.white70, fontSize: 12),
                     ),
                   ],
@@ -102,6 +106,15 @@ class _MessagesScreenState extends State<MessagesScreen> {
         final c = _conversations[i];
         final unread = (c['unreadCount'] as int?) ?? 0;
         final thumb = c['listingImageUrl']?.toString() ?? '';
+        final listingTitle = c['listingTitle']?.toString() ?? '';
+        final peerName = c['userName']?.toString() ?? 'Utilisateur';
+        final isShop = c['isOfficialPeer'] == true;
+        final primaryTitle = _isSeller && listingTitle.isNotEmpty
+            ? listingTitle
+            : (isShop && listingTitle.isNotEmpty ? listingTitle : peerName);
+        final subtitle = _isSeller
+            ? 'Acheteur · $peerName'
+            : (isShop ? 'Boutique · $peerName' : (listingTitle.isNotEmpty ? listingTitle : 'Annonce'));
         return Material(
           color: Colors.white,
           borderRadius: PremiumTheme.radiusMd,
@@ -113,6 +126,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
               peerId: c['peer_id']?.toString() ?? '',
               listingId: c['listingId']?.toString(),
               isOfficialPeer: c['isOfficialPeer'] == true,
+              isTeamPeer: c['isTeamPeer'] == true,
               onChanged: _load,
             ),
             borderRadius: PremiumTheme.radiusMd,
@@ -137,14 +151,30 @@ class _MessagesScreenState extends State<MessagesScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(c['userName'] ?? 'Utilisateur', style: PremiumTheme.h1.copyWith(fontSize: 15)),
-                        if ((c['listingTitle'] as String?)?.isNotEmpty == true) ...[
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                primaryTitle,
+                                style: PremiumTheme.h1.copyWith(fontSize: 14),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (isShop)
+                              const Padding(
+                                padding: EdgeInsets.only(left: 4),
+                                child: Icon(Icons.verified_rounded, size: 14, color: PremiumTheme.gold),
+                              ),
+                          ],
+                        ),
+                        if (subtitle.isNotEmpty) ...[
                           const SizedBox(height: 2),
                           Text(
-                            c['listingTitle'].toString(),
+                            subtitle,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: PremiumTheme.blue),
+                            style: PremiumTheme.label.copyWith(fontSize: 11, color: PremiumTheme.blue),
                           ),
                         ],
                         const SizedBox(height: 4),
@@ -170,6 +200,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                       peerId: c['peer_id']?.toString() ?? '',
                       listingId: c['listingId']?.toString(),
                       isOfficialPeer: c['isOfficialPeer'] == true,
+                      isTeamPeer: c['isTeamPeer'] == true,
                       onChanged: _load,
                     ),
                   ),

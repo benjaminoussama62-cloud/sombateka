@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../widgets/marketplace_product_card.dart';
-import '../widgets/wildberries_filter_sheet.dart';
+import '../widgets/marketplace_filter_sheet.dart';
 import '../theme/premium_theme.dart';
 import '../services/cart_ui_helper.dart';
 import '../services/data_service.dart';
@@ -25,7 +25,7 @@ class _SearchScreenState extends State<SearchScreen> {
   final _imagePicker = ImagePicker();
   final _dataService = DataService();
 
-  final _filters = WildberriesFilterState();
+  final _filters = MarketplaceFilterState();
   List<String> _categories = ['Toutes'];
   Map<String, int> _categoryIds = {};
 
@@ -223,7 +223,7 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<void> _openFilters() async {
-    final result = await showWildberriesFilterSheet(
+    final result = await showMarketplaceFilterSheet(
       context,
       initial: _filters,
       categories: _categories,
@@ -304,7 +304,7 @@ class _SearchScreenState extends State<SearchScreen> {
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
           child: Text(
             _imageSearchActive
-                ? 'Résultats proches de votre photo'
+                ? 'Résultats IA · photo similaire'
                 : '${results.length} résultat${results.length > 1 ? 's' : ''}',
             style: PremiumTheme.h1.copyWith(fontSize: 16),
           ),
@@ -319,17 +319,55 @@ class _SearchScreenState extends State<SearchScreen> {
               childAspectRatio: Responsive.productGridAspectRatio(context),
             ),
             itemCount: results.length,
-            itemBuilder: (_, i) => MarketplaceProductCard(
-              listing: results[i],
-              onTap: () => Navigator.pushNamed(context, AppRoutes.detail, arguments: results[i]),
-              onFavorite: () async {
-                await _dataService.toggleFavorite(results[i]['id']?.toString() ?? '');
-                setState(() {});
-              },
-              onAddToCart: results[i]['isOwnListing'] == true
-                  ? null
-                  : () => CartUiHelper.addListing(context, results[i]),
-            ),
+            itemBuilder: (_, i) {
+              final listing = results[i];
+              final sim = (listing['similarity'] as num?)?.toDouble();
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  MarketplaceProductCard(
+                    listing: listing,
+                    onTap: () => Navigator.pushNamed(context, AppRoutes.detail, arguments: listing),
+                    onFavorite: () async {
+                      await _dataService.toggleFavorite(listing['id']?.toString() ?? '');
+                      setState(() {});
+                    },
+                    onAddToCart: listing['isOwnListing'] == true
+                        ? null
+                        : () => CartUiHelper.addListing(context, listing),
+                  ),
+                  if (_imageSearchActive && sim != null && sim > 0)
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [PremiumTheme.navy, PremiumTheme.blue],
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.auto_awesome_rounded, color: PremiumTheme.gold, size: 12),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${(sim * 100).round()}%',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
         ),
       ],
@@ -349,7 +387,7 @@ class _SearchScreenState extends State<SearchScreen> {
           Text('Catégories', style: PremiumTheme.h1.copyWith(fontSize: 17)),
           const SizedBox(height: 4),
           Text(
-            'Mêmes catégories que dans Publier — utilisez l’appareil photo pour chercher par image',
+            'SombaTeka IA — photo ou galerie pour trouver le même produit',
             style: PremiumTheme.body.copyWith(fontSize: 12),
           ),
           const SizedBox(height: 14),
@@ -515,12 +553,48 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<void> _searchByImage() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Recherche IA par photo', style: PremiumTheme.h1.copyWith(fontSize: 18)),
+              const SizedBox(height: 6),
+              Text(
+                'Cadrez un seul produit — SombaTeka analyse forme, couleurs et textures.',
+                style: PremiumTheme.body.copyWith(fontSize: 12),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.photo_camera_rounded, color: PremiumTheme.blue),
+                title: const Text('Prendre une photo'),
+                onTap: () => Navigator.pop(ctx, ImageSource.camera),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library_rounded, color: PremiumTheme.navy),
+                title: const Text('Choisir dans la galerie'),
+                onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (source == null) return;
+
     try {
       final image = await _imagePicker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 800,
-        maxHeight: 600,
-        imageQuality: 80,
+        source: source,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 90,
       );
       if (image == null) return;
       setState(() => _loading = true);

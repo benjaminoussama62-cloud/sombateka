@@ -9,6 +9,7 @@ Future<void> showConversationActions(
   required String peerId,
   String? listingId,
   bool isOfficialPeer = false,
+  bool isTeamPeer = false,
   VoidCallback? onChanged,
 }) async {
   final action = await showModalBottomSheet<String>(
@@ -43,7 +44,12 @@ Future<void> showConversationActions(
   if (action == null || !context.mounted) return;
 
   if (action == 'delete') {
-    await data.hideConversation(peerId: peerId, listingId: listingId, isOfficialPeer: isOfficialPeer);
+    await data.hideConversation(
+      peerId: peerId,
+      listingId: listingId,
+      isOfficialPeer: isOfficialPeer,
+      isTeamPeer: isTeamPeer,
+    );
     if (context.mounted) {
       showAppSuccess(context, 'Conversation supprimée');
       onChanged?.call();

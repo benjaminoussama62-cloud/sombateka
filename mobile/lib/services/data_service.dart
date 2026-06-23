@@ -18,6 +18,7 @@ class DataService {
 
   final _app = AppServices.instance;
   List<Map<String, dynamic>> _listings = [];
+  List<Map<String, dynamic>> _officialListingsCache = [];
   List<Map<String, dynamic>> _favoriteListings = [];
   List<Map<String, dynamic>> _conversations = [];
   List<Map<String, dynamic>> _notifications = [];
@@ -67,6 +68,7 @@ class DataService {
     String? commune,
     String? quartier,
     String? province,
+    bool mixPromoted = false,
   }) async {
     final raw = await _app.listings.fetchListings(
       q: q,
@@ -85,6 +87,7 @@ class DataService {
       minRating: minRating,
       commune: commune,
       quartier: quartier,
+      mixPromoted: mixPromoted,
     );
     _listings = normalizeListings(
       raw,
@@ -111,20 +114,20 @@ class DataService {
     ).map((l) => {...l, 'isOwnListing': true, 'seller_id': _app.currentUser?['id']?.toString()}).toList();
   }
 
-  /// Clé de fil de discussion : 1 annonce = 1 conversation (sauf compte officiel).
+  /// Clé de fil : 1 produit = 1 conversation (support SombaTeka = fil unique).
   static String messageThreadKey({
     required String peerId,
     String? listingId,
     bool isOfficialPeer = false,
     bool isTeamPeer = false,
   }) {
-    if (isOfficialPeer || isTeamPeer) return '${peerId}_helpdesk';
+    if (isTeamPeer) return '${peerId}_helpdesk';
     final lid = listingId ?? '0';
     return '${peerId}_$lid';
   }
 
   static bool isHelpdeskThread({bool isOfficialPeer = false, bool isTeamPeer = false}) {
-    return isOfficialPeer || isTeamPeer;
+    return isTeamPeer;
   }
 
   Future<void> republishListing(int listingId) async {
@@ -459,6 +462,85 @@ class DataService {
     };
   }
 
+  Future<Map<String, dynamic>> createOfficialCollection({
+    required String publicationTitle,
+    required String location,
+    String? province,
+    String? commune,
+    String? quartier,
+    String? avenue,
+    String? numero,
+    required String category,
+    int? categoryId,
+    required String brand,
+    required String gender,
+    required String audience,
+    required String deliveryMethod,
+    required List<({
+      String title,
+      String? description,
+      String? condition,
+      String? defaultColor,
+      List<Map<String, dynamic>> variants,
+      List<XFile> imageFiles,
+      List<Uint8List> imageBytesList,
+    })> products,
+  }) async {
+    if (!await hasApiSession()) throw Exception('SESSION_REQUIRED');
+    final productPayloads = products
+        .map((p) => {
+              'title': p.title,
+              if (p.description != null && p.description!.isNotEmpty) 'description': p.description,
+              if (p.condition != null) 'condition': p.condition,
+              if (p.defaultColor != null) 'default_color': p.defaultColor,
+              'variants': p.variants,
+            })
+        .toList();
+
+    final created = await _app.listings.createOfficialCollection(
+      publicationTitle: publicationTitle,
+      city: location,
+      categoryId: categoryId,
+      brand: brand,
+      gender: gender,
+      audience: audience,
+      province: province,
+      commune: commune,
+      quartier: quartier,
+      avenue: avenue,
+      numero: numero,
+      deliveryMethod: deliveryMethod,
+      products: productPayloads,
+    );
+
+    for (var i = 0; i < created.listingIds.length && i < products.length; i++) {
+      final id = created.listingIds[i];
+      final p = products[i];
+      for (var j = 0; j < p.imageFiles.length; j++) {
+        final x = p.imageFiles[j];
+        try {
+          final bytes = j < p.imageBytesList.length ? p.imageBytesList[j] : await x.readAsBytes();
+          if (bytes.isEmpty) continue;
+          final name = _photoFilename(x.name, j);
+          final mime = name.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+          if (kIsWeb || x.path.isEmpty) {
+            await _app.listings.uploadImageBytes(id, bytes: bytes, filename: name, contentType: mime);
+          } else {
+            await _app.listings.uploadImage(id, x.path);
+          }
+        } catch (_) {}
+      }
+    }
+
+    await refreshListings(mixPromoted: true);
+    await refreshMyListings();
+    return {
+      'publicationId': created.publicationId,
+      'listingIds': created.listingIds,
+      'productCount': created.listingIds.length,
+    };
+  }
+
   Future<Map<String, dynamic>> createOfficialCatalog({
     required String title,
     required String description,
@@ -532,8 +614,178 @@ class DataService {
   List<Map<String, dynamic>> getParticularListings() =>
       _listings.where((l) => l['isOfficial'] != true).toList();
 
-  List<Map<String, dynamic>> getProfessionalStores() {
+  /// Fil accueil particuliers uniquement.
+  List<Map<String, dynamic>> getHomeFeedListings() => List.unmodifiable(_listings);
+
+  /// Toutes les annonces (particuliers + officiels) pour recherche / variantes.
+  List<Map<String, dynamic>> getAllListings() =>
+      List.unmodifiable([..._listings, ..._officialListingsCache]);
+
+  /// Recharge les fils accueil Particulier et Professionnel séparément.
+  Future<void> refreshHomeFeeds({String? province}) async {
+    final uid = _app.currentUser?['id']?.toString();
+    final fav = _app.favoriteIds;
+    final rawAll = await _app.listings.fetchListings(province: province, mixPromoted: false);
+    var normalized = normalizeListings(rawAll, favoriteIds: fav, currentUserId: uid);
+
+    final rawOfficial = await _app.listings.fetchListings(province: province, isOfficial: true);
+    final officialFromApi = normalizeListings(rawOfficial, favoriteIds: fav, currentUserId: uid);
+    final proFromAll = normalized.where(isProListing).toList();
+    final byId = <String, Map<String, dynamic>>{};
+    for (final l in [...officialFromApi, ...proFromAll]) {
+      final id = l['id']?.toString();
+      if (id != null && id.isNotEmpty) byId[id] = l;
+    }
+    _officialListingsCache = byId.values.toList();
+    _listings = normalized.where((l) {
+      final id = l['id']?.toString() ?? '';
+      return id.isEmpty || !byId.containsKey(id);
+    }).toList();
+    await OfflineCache.cacheListings(getAllListings());
+  }
+
+  /// Fil accueil : particuliers + comptes officiels promus (mix API).
+
+  /// Bandeau horizontal des produits officiels promus.
+  List<Map<String, dynamic>> getPromotedOfficialListings() {
     final official = _listings.where((l) => l['isOfficial'] == true).toList();
+    if (official.isEmpty) return [];
+    final bySeller = <String, List<Map<String, dynamic>>>{};
+    for (final l in official) {
+      final sid = l['seller_id']?.toString() ?? '0';
+      bySeller.putIfAbsent(sid, () => []).add(l);
+    }
+    final queues = bySeller.values.map((list) {
+      list.sort((a, b) {
+        final ta = DateTime.tryParse(a['createdAt']?.toString() ?? '') ?? DateTime(2000);
+        final tb = DateTime.tryParse(b['createdAt']?.toString() ?? '') ?? DateTime(2000);
+        return tb.compareTo(ta);
+      });
+      return List<Map<String, dynamic>>.from(list);
+    }).toList();
+    final out = <Map<String, dynamic>>[];
+    while (queues.any((q) => q.isNotEmpty)) {
+      for (final q in queues) {
+        if (q.isNotEmpty) out.add({...q.removeAt(0), 'promoted': true});
+      }
+    }
+    return out;
+  }
+
+  /// Produits de la même publication officielle (même écran, plusieurs variantes).
+  List<Map<String, dynamic>> getPublicationSiblings(Map<String, dynamic> listing) {
+    final pid = listing['publicationId']?.toString() ??
+        ListingAttributes.publicationId(listing['attributes']);
+    if (pid == null || pid.isEmpty || pid.startsWith('solo_')) {
+      return [normalizeListing(listing, favoriteIds: _app.favoriteIds, currentUserId: _app.currentUser?['id']?.toString())];
+    }
+    final siblings = getAllListings()
+        .where((l) {
+          final other = l['publicationId']?.toString() ?? ListingAttributes.publicationId(l['attributes']);
+          return other == pid;
+        })
+        .map((l) => normalizeListing(l, favoriteIds: _app.favoriteIds, currentUserId: _app.currentUser?['id']?.toString()))
+        .toList();
+    if (siblings.isEmpty) {
+      return [normalizeListing(listing, favoriteIds: _app.favoriteIds, currentUserId: _app.currentUser?['id']?.toString())];
+    }
+    siblings.sort((a, b) {
+      final ia = ListingAttributes.decodeMap(a['attributes'])?['product_index'] as num? ?? 0;
+      final ib = ListingAttributes.decodeMap(b['attributes'])?['product_index'] as num? ?? 0;
+      return ia.compareTo(ib);
+    });
+    return siblings;
+  }
+
+  List<Map<String, dynamic>> getOfficialProductListings() =>
+      _officialListingsCache.isNotEmpty
+          ? List.unmodifiable(_officialListingsCache)
+          : _listings.where((l) => isProListing(l)).toList();
+
+  /// Publications officielles groupées (1 publication → plusieurs produits).
+  List<Map<String, dynamic>> getOfficialPublications() {
+    final official = getOfficialProductListings();
+    if (official.isEmpty) return [];
+    final pubs = <String, Map<String, dynamic>>{};
+    for (final l in official) {
+      final pid = l['publicationId']?.toString() ??
+          ListingAttributes.publicationId(l['attributes']) ??
+          'solo_${l['id']}';
+      final pubTitle = ListingAttributes.publicationTitle(l['attributes']) ??
+          l['title']?.toString() ??
+          'Publication';
+      pubs.putIfAbsent(pid, () => {
+        'id': pid,
+        'title': pubTitle,
+        'sellerId': l['seller_id']?.toString() ?? '',
+        'sellerName': l['sellerName']?.toString() ?? 'Boutique officielle',
+        'location': l['location'] ?? l['city'] ?? '',
+        'products': <Map<String, dynamic>>[],
+      });
+      (pubs[pid]!['products'] as List<Map<String, dynamic>>).add(l);
+    }
+    final list = pubs.values.toList();
+    list.sort((a, b) {
+      final pa = (a['products'] as List).length;
+      final pb = (b['products'] as List).length;
+      return pb.compareTo(pa);
+    });
+    return list;
+  }
+
+  bool get isOfficialSeller {
+    final u = _app.currentUser;
+    if (u == null) return false;
+    if (u['is_verified_seller'] == true || u['isVerified'] == true) return true;
+    final role = u['role']?.toString().toLowerCase() ?? '';
+    return role.contains('official');
+  }
+
+  /// Stats tableau de bord vendeur officiel.
+  Map<String, dynamic> getBusinessDashboardStats() {
+    final uid = _app.currentUser?['id']?.toString();
+    if (uid == null) {
+      return {'productCount': 0, 'publicationCount': 0, 'totalStock': 0, 'promotedOnHome': 0, 'publications': <Map<String, dynamic>>[]};
+    }
+    final mine = _myListingsCache.isNotEmpty
+        ? _myListingsCache
+        : getUserListings(uid);
+    final catalog = mine.where((l) => ListingAttributes.isCatalogListing(l['attributes'])).toList();
+    var totalStock = 0;
+    for (final l in catalog) {
+      totalStock += ListingAttributes.catalogTotalStock(l['attributes']);
+    }
+    final pubMap = <String, Map<String, dynamic>>{};
+    for (final l in catalog) {
+      final pid = ListingAttributes.publicationId(l['attributes']) ?? 'solo_${l['id']}';
+      final title = ListingAttributes.publicationTitle(l['attributes']) ?? l['title']?.toString() ?? 'Publication';
+      pubMap.putIfAbsent(pid, () => {'title': title, 'productCount': 0});
+      pubMap[pid]!['productCount'] = (pubMap[pid]!['productCount'] as int) + 1;
+    }
+    final promotedOnHome = catalog.where((l) {
+      final id = l['id']?.toString();
+      return _listings.any((f) => f['id']?.toString() == id && (f['promoted'] == true || f['isOfficial'] == true));
+    }).length;
+    final sold = mine.where((l) => l['status']?.toString() == 'sold').length;
+    final active = mine.where((l) => l['status']?.toString() == 'active').length;
+    var revenue = 0;
+    for (final l in mine.where((x) => x['status']?.toString() == 'sold')) {
+      revenue += int.tryParse(l['price_cdf']?.toString() ?? l['price']?.toString().replaceAll(RegExp(r'[^\d]'), '') ?? '0') ?? 0;
+    }
+    return {
+      'productCount': catalog.length,
+      'publicationCount': pubMap.length,
+      'totalStock': totalStock,
+      'promotedOnHome': promotedOnHome,
+      'publications': pubMap.values.toList(),
+      'soldCount': sold,
+      'activeCount': active,
+      'revenueCdf': revenue,
+    };
+  }
+
+  List<Map<String, dynamic>> getProfessionalStores() {
+    final official = getOfficialProductListings();
     if (official.isEmpty) return [];
     final bySeller = <String, List<Map<String, dynamic>>>{};
     for (final l in official) {
@@ -1016,9 +1268,10 @@ class DataService {
     required String peerId,
     String? listingId,
     bool isOfficialPeer = false,
+    bool isTeamPeer = false,
   }) async {
     final pid = int.parse(peerId);
-    final lid = isOfficialPeer ? null : int.tryParse(listingId ?? '');
+    final lid = isHelpdeskThread(isTeamPeer: isTeamPeer) ? null : int.tryParse(listingId ?? '');
     await _app.messages.hideConversation(peerId: pid, listingId: lid);
     await refreshConversations();
   }

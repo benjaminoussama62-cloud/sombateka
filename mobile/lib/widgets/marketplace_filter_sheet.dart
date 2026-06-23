@@ -5,8 +5,8 @@ import '../utils/listing_attributes.dart';
 import '../utils/rdc_locations.dart';
 import 'location_picker_fields.dart';
 
-/// Filtres style Wildberries (catégorie, avis, couleur, genre, enfant, marque, localisation…).
-class WildberriesFilterState {
+/// Filtres avancés SombaTeka (catégorie, avis, couleur, localisation RDC…).
+class MarketplaceFilterState {
   String category = 'Toutes';
   int? categoryId;
   String? size;
@@ -60,17 +60,17 @@ class WildberriesFilterState {
   }
 }
 
-Future<WildberriesFilterState?> showWildberriesFilterSheet(
+Future<MarketplaceFilterState?> showMarketplaceFilterSheet(
   BuildContext context, {
-  required WildberriesFilterState initial,
+  required MarketplaceFilterState initial,
   required List<String> categories,
   required Map<String, int> categoryIds,
 }) {
-  return showModalBottomSheet<WildberriesFilterState>(
+  return showModalBottomSheet<MarketplaceFilterState>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (ctx) => _WildberriesFilterSheet(
+    builder: (ctx) => _MarketplaceFilterSheet(
       initial: initial,
       categories: categories,
       categoryIds: categoryIds,
@@ -78,22 +78,22 @@ Future<WildberriesFilterState?> showWildberriesFilterSheet(
   );
 }
 
-class _WildberriesFilterSheet extends StatefulWidget {
-  const _WildberriesFilterSheet({
+class _MarketplaceFilterSheet extends StatefulWidget {
+  const _MarketplaceFilterSheet({
     required this.initial,
     required this.categories,
     required this.categoryIds,
   });
 
-  final WildberriesFilterState initial;
+  final MarketplaceFilterState initial;
   final List<String> categories;
   final Map<String, int> categoryIds;
 
   @override
-  State<_WildberriesFilterSheet> createState() => _WildberriesFilterSheetState();
+  State<_MarketplaceFilterSheet> createState() => _MarketplaceFilterSheetState();
 }
 
-class _WildberriesFilterSheetState extends State<_WildberriesFilterSheet> {
+class _MarketplaceFilterSheetState extends State<_MarketplaceFilterSheet> {
   late String _category;
   late int? _categoryId;
   String? _size;
@@ -136,8 +136,8 @@ class _WildberriesFilterSheetState extends State<_WildberriesFilterSheet> {
     super.dispose();
   }
 
-  WildberriesFilterState _buildResult() {
-    return WildberriesFilterState()
+  MarketplaceFilterState _buildResult() {
+    return MarketplaceFilterState()
       ..category = _category
       ..categoryId = _categoryId
       ..size = _size
@@ -172,7 +172,7 @@ class _WildberriesFilterSheetState extends State<_WildberriesFilterSheet> {
             child: Row(
               children: [
                 IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded)),
-                Expanded(child: Text('Filtres', style: PremiumTheme.h1.copyWith(fontSize: 18))),
+                Expanded(child: Text('Filtres SombaTeka', style: PremiumTheme.h1.copyWith(fontSize: 18))),
                 TextButton(
                   onPressed: () => setState(() {
                     _category = 'Toutes';

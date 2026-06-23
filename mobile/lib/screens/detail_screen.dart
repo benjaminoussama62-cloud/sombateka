@@ -15,6 +15,7 @@ import '../utils/app_feedback.dart';
 import '../widgets/app_confirm_dialog.dart';
 import '../widgets/fullscreen_image_viewer.dart';
 import '../widgets/listing_reviews_section.dart';
+import 'business_hub_screen.dart';
 import '../widgets/marketplace_product_card.dart';
 import 'chat_screen.dart';
 import 'package:share_plus/share_plus.dart';
@@ -40,6 +41,7 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
   bool _loading = true;
   bool _liked = false;
   List<Map<String, dynamic>> _apiSimilar = [];
+  List<Map<String, dynamic>> _publicationSiblings = [];
   Map<String, dynamic>? _listingReviews;
   Map<String, dynamic>? _reviewEligibility;
   String? _selectedSize;
@@ -65,6 +67,7 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
           setState(() {
             _listing = _withOwnership(full);
             _liked = _listing['isFavorite'] == true;
+            _publicationSiblings = _data.getPublicationSiblings(_listing);
           });
           await RecentlyViewedService.instance.track(_listing);
         }
@@ -93,9 +96,50 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
       } catch (_) {}
     }
     if (mounted) {
-      setState(() => _loading = false);
+      setState(() {
+        _loading = false;
+        if (_publicationSiblings.isEmpty) {
+          _publicationSiblings = _data.getPublicationSiblings(_listing);
+        }
+      });
       _fadeCtrl.forward();
     }
+  }
+
+  bool get _hasPublicationSiblings => _publicationSiblings.length > 1;
+
+  String get _selectedSiblingLabel {
+    final attrs = ListingAttributes.decodeMap(_listing['attributes']);
+    final color = attrs?['color']?.toString() ?? attrs?['default_color']?.toString();
+    if (color != null && color.isNotEmpty) return color;
+    return _s('title', 'Variante');
+  }
+
+  Future<void> _switchPublicationSibling(Map<String, dynamic> sibling) async {
+    final id = int.tryParse(sibling['id']?.toString() ?? '');
+    if (id == null) return;
+    if (id.toString() == _listing['id']?.toString()) return;
+    setState(() {
+      _loading = true;
+      _imageIndex = 0;
+    });
+    _pageController.jumpToPage(0);
+    try {
+      final full = await _data.fetchListingDetail(id);
+      if (full != null && mounted) {
+        setState(() {
+          _listing = _withOwnership(full);
+          _liked = _listing['isFavorite'] == true;
+          _publicationSiblings = _data.getPublicationSiblings(_listing);
+          _selectedSize = null;
+          _selectedColor = null;
+          _initCatalogSelection();
+        });
+        final similar = await _data.fetchSimilarListings(id);
+        if (mounted) _apiSimilar = similar.items.map(_withOwnership).toList();
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _loading = false);
   }
 
   List<String> get _images {
@@ -159,9 +203,17 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
     if (!_isCatalog) return;
     final sizes = _availableSizes;
     final colors = _availableColors;
-    _selectedSize ??= sizes.isNotEmpty ? sizes.first : null;
     _selectedColor ??= colors.isNotEmpty ? colors.first : null;
+    if (_selectedSize == null && sizes.isNotEmpty) {
+      _selectedSize = sizes.firstWhere(
+        (s) => ListingAttributes.stockForSize(_listing['attributes'], s, color: _selectedColor) > 0,
+        orElse: () => sizes.first,
+      );
+    }
   }
+
+  int _stockForSize(String size) =>
+      ListingAttributes.stockForSize(_listing['attributes'], size, color: _selectedColor);
 
   String get _displayPrice {
     final v = _selectedVariant;
@@ -324,6 +376,16 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
                                 ),
                             ],
                           ),
+                          if (_hasPublicationSiblings) ...[
+                            const SizedBox(height: 16),
+                            _collectionVariantPicker(),
+                          ],
+                          if (_isCatalog && !_isOwn) ...[
+                            const SizedBox(height: 12),
+                            _stockUrgencyBadge(),
+                            const SizedBox(height: 12),
+                            _catalogVariantSection(),
+                          ],
                           const SizedBox(height: 12),
                           Wrap(
                             spacing: 8,
@@ -331,19 +393,15 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
                             children: [
                               _chip(Icons.category_rounded, _s('category', 'Général')),
                               _chip(Icons.location_on_rounded, _s('location', 'RDC')),
-                              if (_listing['isVerified'] == true)
-                              _chip(Icons.verified_rounded, 'Boutique officielle', gold: true),
-                            if ((_listing['size']?.toString() ?? '').isNotEmpty && !_isCatalog)
-                              _chip(Icons.straighten_rounded, 'Taille ${_listing['size']}'),
+                              if (_listing['isVerified'] == true || _listing['isOfficial'] == true)
+                                _chip(Icons.verified_rounded, 'Boutique officielle', gold: true),
+                              if ((_listing['size']?.toString() ?? '').isNotEmpty && !_isCatalog)
+                                _chip(Icons.straighten_rounded, 'Taille ${_listing['size']}'),
                             ],
                           ),
                           if (_listingReviews != null && ((_listingReviews!['review_count'] as num?)?.toInt() ?? 0) > 0) ...[
                             const SizedBox(height: 10),
                             _ratingSummaryChip(),
-                          ],
-                          if (_isCatalog && !_isOwn) ...[
-                            const SizedBox(height: 16),
-                            _catalogVariantSection(),
                           ],
                           const SizedBox(height: 24),
                           Text('Description', style: PremiumTheme.h1.copyWith(fontSize: 17)),
@@ -366,12 +424,16 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
                           if (!_isOwn && !_isCatalog) ...[
                             _listingParamsSection(),
                             const SizedBox(height: 16),
-                            _kufarQuickMessages(),
+                            _quickContactMessages(),
                           ],
                           if (!_isOwn && _isCatalog) ...[
                             _listingParamsSection(),
                           ],
                           if (_isOwn) _ownerStatsCard(),
+                          if (_hasPublicationSiblings) ...[
+                            const SizedBox(height: 24),
+                            _publicationProductsSection(),
+                          ],
                           const SizedBox(height: 28),
                           if (!_isOwn) _similarSectionButton(),
                           if (!_isOwn) const SizedBox(height: 12),
@@ -468,30 +530,178 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
     );
   }
 
+  Widget _stockUrgencyBadge() {
+    if (!_isCatalog || _selectedStock <= 0) return const SizedBox.shrink();
+    if (_selectedStock > 15) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.bolt_rounded, color: PremiumTheme.gold, size: 16),
+          const SizedBox(width: 6),
+          Text(
+            'Il reste $_selectedStock en taille ${_selectedSize ?? ''}',
+            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _publicationProductsSection() {
+    final others = _publicationSiblings
+        .where((s) => s['id']?.toString() != _listing['id']?.toString())
+        .toList();
+    if (others.isEmpty) return const SizedBox.shrink();
+    final pubTitle = ListingAttributes.publicationTitle(_listing['attributes']) ?? 'Cette publication';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Autres produits · $pubTitle',
+                style: PremiumTheme.h1.copyWith(fontSize: 16),
+              ),
+            ),
+            TextButton(
+              onPressed: _showAllPublicationVariants,
+              child: Text('Tous ${others.length + 1}', style: const TextStyle(fontWeight: FontWeight.w800)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 200,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: others.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (_, i) {
+              final item = others[i];
+              return SizedBox(
+                width: 130,
+                child: MarketplaceProductCard(
+                  listing: item,
+                  compact: true,
+                  onTap: () => _switchPublicationSibling(item),
+                  onFavorite: () async {
+                    await _data.toggleFavorite(item['id']?.toString() ?? '');
+                    if (mounted) setState(() {});
+                  },
+                  onAddToCart: () => CartUiHelper.addListing(context, item),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _ownerStatsCard() {
     final status = _listing['status']?.toString() ?? 'active';
     final label = status == 'sold' ? 'Vendu' : (status == 'active' ? 'En ligne' : 'Masquée');
+    final stats = _data.getBusinessDashboardStats();
+    final isPro = _data.isOfficialSeller;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF0FDF4),
+        gradient: LinearGradient(
+          colors: isPro
+              ? [PremiumTheme.navy, PremiumTheme.blue.withValues(alpha: 0.85)]
+              : [const Color(0xFFF0FDF4), const Color(0xFFECFDF5)],
+        ),
         borderRadius: PremiumTheme.radiusMd,
-        border: Border.all(color: PremiumTheme.emerald.withValues(alpha: 0.4)),
+        border: Border.all(color: isPro ? Colors.transparent : PremiumTheme.emerald.withValues(alpha: 0.4)),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.insights_rounded, color: PremiumTheme.emerald),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          Row(
+            children: [
+              Icon(Icons.insights_rounded, color: isPro ? PremiumTheme.gold : PremiumTheme.emerald),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isPro ? 'Tableau de bord boutique' : 'Mode vendeur',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                        color: isPro ? Colors.white : PremiumTheme.textDark,
+                      ),
+                    ),
+                    Text(
+                      'Statut : $label',
+                      style: PremiumTheme.body.copyWith(
+                        fontSize: 12,
+                        color: isPro ? Colors.white70 : null,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (isPro)
+                TextButton(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const BusinessHubScreen()),
+                  ),
+                  child: const Text('Espace Pro', style: TextStyle(color: PremiumTheme.gold, fontWeight: FontWeight.w800)),
+                ),
+            ],
+          ),
+          if (isPro) ...[
+            const SizedBox(height: 12),
+            Row(
               children: [
-                const Text('Mode vendeur', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-                Text('Statut : $label', style: PremiumTheme.body.copyWith(fontSize: 12)),
+                _miniStat('${stats['soldCount'] ?? 0}', 'Vendus', isPro: true),
+                _miniStat('${stats['totalStock'] ?? 0}', 'Stock', isPro: true),
+                _miniStat('${stats['productCount'] ?? 0}', 'Produits', isPro: true),
               ],
             ),
-          ),
+          ],
         ],
+      ),
+    );
+  }
+
+  Widget _miniStat(String value, String label, {bool isPro = false}) {
+    return Expanded(
+      child: Container(
+        margin: const EdgeInsets.only(right: 6),
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: isPro ? Colors.white.withValues(alpha: 0.12) : Colors.white,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          children: [
+            Text(
+              value,
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                fontSize: 16,
+                color: isPro ? Colors.white : PremiumTheme.blue,
+              ),
+            ),
+            Text(
+              label,
+              style: TextStyle(fontSize: 10, color: isPro ? Colors.white70 : PremiumTheme.textMuted),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -807,6 +1017,176 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
     );
   }
 
+  Widget _collectionVariantPicker() {
+    final pubTitle = ListingAttributes.publicationTitle(_listing['attributes']) ?? 'Collection';
+    final currentId = _listing['id']?.toString();
+    const thumbSize = 64.0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Modèle · $pubTitle',
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+              ),
+            ),
+            if (_publicationSiblings.length > 6)
+              TextButton(
+                onPressed: _showAllPublicationVariants,
+                child: Text('Tous ${_publicationSiblings.length}', style: const TextStyle(fontWeight: FontWeight.w800)),
+              ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: thumbSize + 32,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: _publicationSiblings.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemBuilder: (_, i) {
+              final item = _publicationSiblings[i];
+              final selected = item['id']?.toString() == currentId;
+              final img = item['imageUrl']?.toString() ?? '';
+              final label = ListingAttributes.decodeMap(item['attributes'])?['color']?.toString() ??
+                  item['title']?.toString() ??
+                  'Modèle ${i + 1}';
+              return GestureDetector(
+                onTap: () => _switchPublicationSibling(item),
+                child: Column(
+                  children: [
+                    Container(
+                      width: thumbSize,
+                      height: thumbSize,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: selected ? PremiumTheme.blue : const Color(0xFFE2E8F0),
+                          width: selected ? 2.5 : 1,
+                        ),
+                        boxShadow: selected
+                            ? [BoxShadow(color: PremiumTheme.blue.withValues(alpha: 0.2), blurRadius: 8)]
+                            : null,
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: img.isNotEmpty
+                            ? CachedNetworkImage(imageUrl: img, fit: BoxFit.cover)
+                            : ColoredBox(
+                                color: const Color(0xFFF1F5F9),
+                                child: Icon(Icons.image_outlined, color: Colors.grey.shade400, size: 22),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      width: thumbSize + 8,
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                          color: selected ? PremiumTheme.blue : const Color(0xFF64748B),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          _selectedSiblingLabel,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+        ),
+      ],
+    );
+  }
+
+  void _showAllPublicationVariants() {
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) {
+        final currentId = _listing['id']?.toString();
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Tous les modèles (${_publicationSiblings.length})',
+                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 12),
+              Flexible(
+                child: GridView.builder(
+                  shrinkWrap: true,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 4,
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 10,
+                    childAspectRatio: 0.72,
+                  ),
+                  itemCount: _publicationSiblings.length,
+                  itemBuilder: (_, i) {
+                    final item = _publicationSiblings[i];
+                    final selected = item['id']?.toString() == currentId;
+                    final img = item['imageUrl']?.toString() ?? '';
+                    return GestureDetector(
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _switchPublicationSibling(item);
+                      },
+                      child: Column(
+                        children: [
+                          Expanded(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: selected ? PremiumTheme.blue : const Color(0xFFE2E8F0),
+                                  width: selected ? 2 : 1,
+                                ),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: img.isNotEmpty
+                                    ? CachedNetworkImage(imageUrl: img, fit: BoxFit.cover, width: double.infinity)
+                                    : const ColoredBox(color: Color(0xFFF1F5F9)),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            item['title']?.toString() ?? '',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 9),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _catalogVariantSection() {
     final sizes = _availableSizes;
     final colors = _availableColors;
@@ -837,16 +1217,28 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
               runSpacing: 8,
               children: sizes.map((s) {
                 final selected = _selectedSize == s;
-                return ChoiceChip(
-                  label: Text(s),
-                  selected: selected,
-                  onSelected: (_) => setState(() => _selectedSize = s),
+                final stock = _stockForSize(s);
+                final out = stock <= 0;
+                return FilterChip(
+                  label: Text(out ? '$s · épuisé' : s),
+                  selected: selected && !out,
+                  onSelected: out ? null : (_) => setState(() => _selectedSize = s),
                   selectedColor: PremiumTheme.blue.withValues(alpha: 0.15),
+                  showCheckmark: !out,
                   labelStyle: TextStyle(
                     fontWeight: FontWeight.w700,
-                    color: selected ? PremiumTheme.blue : PremiumTheme.textDark,
+                    fontSize: 13,
+                    color: out
+                        ? PremiumTheme.textMuted
+                        : (selected ? PremiumTheme.blue : PremiumTheme.textDark),
+                    decoration: out ? TextDecoration.lineThrough : null,
                   ),
-                  side: BorderSide(color: selected ? PremiumTheme.blue : const Color(0xFFE2E8F0)),
+                  side: BorderSide(
+                    color: out
+                        ? const Color(0xFFE2E8F0)
+                        : (selected ? PremiumTheme.blue : const Color(0xFFE2E8F0)),
+                  ),
+                  backgroundColor: out ? const Color(0xFFF8FAFC) : null,
                 );
               }).toList(),
             ),
@@ -908,7 +1300,7 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
     );
   }
 
-  static const _kufarTemplates = [
+  static const _quickMessageTemplates = [
     'Comment puis-je récupérer l\'article ?',
     'L\'article est-il encore disponible ?',
     'Quel est votre dernier prix ?',
@@ -962,7 +1354,7 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
     );
   }
 
-  Widget _kufarQuickMessages() {
+  Widget _quickContactMessages() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -973,7 +1365,7 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
           style: PremiumTheme.body.copyWith(fontSize: 13),
         ),
         const SizedBox(height: 12),
-        ..._kufarTemplates.map((msg) => Padding(
+        ..._quickMessageTemplates.map((msg) => Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Material(
                 color: Colors.white,
