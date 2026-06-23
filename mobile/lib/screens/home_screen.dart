@@ -16,6 +16,8 @@ import '../utils/rdc_locations.dart';
 import '../utils/responsive.dart';
 import '../services/recently_viewed_service.dart';
 import '../services/preferred_province_service.dart';
+import '../services/onboarding_service.dart';
+import '../widgets/app_tour_overlay.dart';
 import '../widgets/province_picker_sheet.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -121,7 +123,12 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         _notifCount = _dataService.unreadNotificationCount;
       }
     } catch (_) {}
-    if (mounted) setState(() => _isLoading = false);
+    if (mounted) {
+      setState(() => _isLoading = false);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        AppTourPresenter.maybeShow(context, AppTourPage.home);
+      });
+    }
   }
 
   @override

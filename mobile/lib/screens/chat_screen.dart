@@ -23,6 +23,7 @@ class ChatScreen extends StatefulWidget {
     this.listingImageUrl,
     this.isOfficialPeer = false,
     this.isTeamPeer = false,
+    this.allowHelpdeskCompose = false,
     this.initialDraft,
     this.autoSendMessage,
   });
@@ -34,6 +35,8 @@ class ChatScreen extends StatefulWidget {
   final String? listingImageUrl;
   final bool isOfficialPeer;
   final bool isTeamPeer;
+  /// Écriture centre d'aide : uniquement depuis Paramètres.
+  final bool allowHelpdeskCompose;
   final String? initialDraft;
   /// Si renseigné, envoi automatique au chargement (messages rapides fiche produit).
   final String? autoSendMessage;
@@ -52,6 +55,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Map<String, dynamic>? _reviewEligibility;
 
   bool get _isHelpdesk => widget.isTeamPeer;
+
+  bool get _helpdeskReadOnly => _isHelpdesk && !widget.allowHelpdeskCompose;
 
   bool get _isSellerInbox {
     final me = _data.currentUser;
@@ -133,6 +138,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _send([String? overrideText]) async {
+    if (_helpdeskReadOnly) return;
     final text = (overrideText ?? _input.text).trim();
     if (text.isEmpty || _sending) return;
     final user = _data.currentUser;
@@ -271,8 +277,8 @@ class _ChatScreenState extends State<ChatScreen> {
       icon: const Icon(Icons.star_rounded, size: 18),
       label: Text(reviewBuyer ? 'Noter l\'acheteur' : 'Laisser mon avis'),
       style: FilledButton.styleFrom(
-        backgroundColor: const Color(0xFFFFB800),
-        foregroundColor: Colors.black87,
+        backgroundColor: PremiumTheme.blue,
+        foregroundColor: Colors.white,
       ),
     );
   }
@@ -296,12 +302,14 @@ class _ChatScreenState extends State<ChatScreen> {
         children: [
           _header(),
           if (!_isHelpdesk && widget.listingTitle != null && widget.listingTitle!.isNotEmpty) _listingBanner(),
+          if (_isHelpdesk) _helpdeskInfoBanner(),
           Expanded(child: _loading ? const Center(child: CircularProgressIndicator(color: PremiumTheme.blue)) : _messageList()),
-          if (!_loading && _messages.isEmpty) _quickReplyBar(),
-          ChatInput(
+          if (!_loading && _messages.isEmpty && !_helpdeskReadOnly) _quickReplyBar(),
+          if (_helpdeskReadOnly) _helpdeskReadOnlyBar() else ChatInput(
             controller: _input,
             onSend: () => _send(),
             isLoading: _sending,
+            hintText: _isHelpdesk ? 'Votre message au centre d\'aide…' : 'Message…',
           ),
         ],
       ),
@@ -323,11 +331,13 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
               CircleAvatar(
                 radius: 22,
-                backgroundColor: Colors.white.withValues(alpha: 0.2),
-                child: Text(
-                  widget.peerName.isNotEmpty ? widget.peerName[0].toUpperCase() : '?',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
-                ),
+                backgroundColor: _isHelpdesk ? PremiumTheme.emerald.withValues(alpha: 0.25) : Colors.white.withValues(alpha: 0.2),
+                child: _isHelpdesk
+                    ? const Icon(Icons.support_agent_rounded, color: Colors.white, size: 24)
+                    : Text(
+                        widget.peerName.isNotEmpty ? widget.peerName[0].toUpperCase() : '?',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+                      ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -370,6 +380,83 @@ class _ChatScreenState extends State<ChatScreen> {
                     await _initChat();
                     if (mounted) setState(() {});
                   },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _helpdeskInfoBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      color: const Color(0xFFEFF6FF),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: PremiumTheme.blue.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.verified_rounded, color: PremiumTheme.blue, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Centre d\'aide SombaTeka', style: PremiumTheme.h1.copyWith(fontSize: 13, color: PremiumTheme.blue)),
+                Text(
+                  _helpdeskReadOnly
+                      ? 'Lecture seule ici — réponses officielles de l\'équipe.'
+                      : 'Assistance, modération et comptes pro.',
+                  style: PremiumTheme.label.copyWith(fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _helpdeskReadOnlyBar() {
+    return Material(
+      color: Colors.white,
+      elevation: 8,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Pour contacter le support, utilisez Paramètres → Centre d\'aide.',
+                textAlign: TextAlign.center,
+                style: PremiumTheme.body.copyWith(fontSize: 13, color: PremiumTheme.textMuted),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(context, AppRoutes.settings);
+                  },
+                  icon: const Icon(Icons.settings_rounded, size: 18),
+                  label: const Text('Ouvrir Paramètres', style: TextStyle(fontWeight: FontWeight.w800)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: PremiumTheme.blue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: PremiumTheme.radiusMd),
+                  ),
                 ),
               ),
             ],
@@ -606,6 +693,7 @@ class _ChatScreenState extends State<ChatScreen> {
               isMe: m['isMe'] == true,
               timestamp: dt,
               isEdited: m['edited'] == true,
+              isTeamMessage: _isHelpdesk && m['isMe'] != true,
               onLongPress: m['pending'] == true ? null : () => _onMessageLongPress(m),
             ),
             if (isReviewRequest && m['isMe'] != true && _resolvedListingId() != null)

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../utils/constants.dart';
 import '../utils/date_format.dart';
+import '../theme/premium_theme.dart';
 
 class MessageBubble extends StatelessWidget {
   const MessageBubble({
@@ -11,6 +12,7 @@ class MessageBubble extends StatelessWidget {
     required this.timestamp,
     this.isEdited = false,
     this.isTyping = false,
+    this.isTeamMessage = false,
     this.onLongPress,
   });
 
@@ -19,6 +21,7 @@ class MessageBubble extends StatelessWidget {
   final DateTime timestamp;
   final bool isEdited;
   final bool isTyping;
+  final bool isTeamMessage;
   final VoidCallback? onLongPress;
 
   @override
@@ -32,8 +35,12 @@ class MessageBubble extends StatelessWidget {
           if (!isMe) ...[
             CircleAvatar(
               radius: 14,
-              backgroundColor: AppColors.background,
-              child: Icon(Icons.person_outline_rounded, size: 14, color: AppColors.textSecondary),
+              backgroundColor: isTeamMessage ? PremiumTheme.blue.withValues(alpha: 0.12) : AppColors.background,
+              child: Icon(
+                isTeamMessage ? Icons.support_agent_rounded : Icons.person_outline_rounded,
+                size: 14,
+                color: isTeamMessage ? PremiumTheme.blue : AppColors.textSecondary,
+              ),
             ),
             const SizedBox(width: 6),
           ],
@@ -44,7 +51,12 @@ class MessageBubble extends StatelessWidget {
                 constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color: isMe ? const Color(0xFFDCF8C6) : Colors.white,
+                  color: isMe
+                      ? const Color(0xFFDBEAFE)
+                      : (isTeamMessage ? const Color(0xFFF8FAFC) : Colors.white),
+                  border: isTeamMessage && !isMe
+                      ? Border.all(color: PremiumTheme.blue.withValues(alpha: 0.25))
+                      : null,
                   borderRadius: BorderRadius.only(
                     topLeft: const Radius.circular(14),
                     topRight: const Radius.circular(14),
@@ -65,16 +77,30 @@ class MessageBubble extends StatelessWidget {
                     if (isTyping)
                       _buildTypingIndicator()
                     else
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          message,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            height: 1.35,
-                            color: Color(0xFF111827),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (isTeamMessage && !isMe)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Text(
+                                'Centre d\'aide',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  color: PremiumTheme.blue.withValues(alpha: 0.85),
+                                ),
+                              ),
+                            ),
+                          Text(
+                            message,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              height: 1.35,
+                              color: Color(0xFF111827),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     const SizedBox(height: 4),
                     Row(
@@ -141,11 +167,13 @@ class ChatInput extends StatelessWidget {
     required this.controller,
     required this.onSend,
     this.isLoading = false,
+    this.hintText = 'Message…',
   });
 
   final TextEditingController controller;
   final VoidCallback onSend;
   final bool isLoading;
+  final String hintText;
 
   @override
   Widget build(BuildContext context) {
@@ -164,7 +192,7 @@ class ChatInput extends StatelessWidget {
                   maxLines: 4,
                   textCapitalization: TextCapitalization.sentences,
                   decoration: InputDecoration(
-                    hintText: 'Message…',
+                    hintText: hintText,
                     filled: true,
                     fillColor: const Color(0xFFF1F5F9),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),

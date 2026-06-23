@@ -1,6 +1,8 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../services/onboarding_service.dart';
+import '../widgets/app_tour_overlay.dart';
 import '../widgets/premium_profile_header.dart';
 import '../widgets/app_confirm_dialog.dart';
 import '../theme/premium_theme.dart';
@@ -83,6 +85,9 @@ class ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMi
       CurvedAnimation(parent: _statsController, curve: Curves.easeOutBack),
     );
     _statsController.forward();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AppTourPresenter.maybeShow(context, AppTourPage.profile);
+    });
   }
 
   /// Recharge nom, photo et stats depuis l’API (appelé à l’ouverture de l’onglet Profil).

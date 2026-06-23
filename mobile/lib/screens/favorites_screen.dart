@@ -5,6 +5,8 @@ import '../utils/listing_utils.dart';
 import '../services/app_services.dart';
 import '../services/cart_ui_helper.dart';
 import '../services/data_service.dart';
+import '../services/onboarding_service.dart';
+import '../widgets/app_tour_overlay.dart';
 import '../theme/premium_theme.dart';
 import '../utils/constants.dart';
 import '../utils/responsive.dart';
@@ -38,6 +40,9 @@ class FavoritesScreenState extends State<FavoritesScreen> with SingleTickerProvi
     final tab = widget.initialTab.clamp(0, 1);
     _tabs = TabController(length: 2, vsync: this, initialIndex: tab);
     _reload();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AppTourPresenter.maybeShow(context, AppTourPage.cart);
+    });
   }
 
   Future<void> _reload() async {
@@ -136,7 +141,7 @@ class FavoritesScreenState extends State<FavoritesScreen> with SingleTickerProvi
                     const SizedBox(height: 12),
                     TabBar(
                       controller: _tabs,
-                      indicatorColor: PremiumTheme.gold,
+                      indicatorColor: PremiumTheme.blue,
                       labelColor: Colors.white,
                       unselectedLabelColor: Colors.white60,
                       tabs: [

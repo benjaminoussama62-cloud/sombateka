@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../services/data_service.dart';
 import 'business_hub_screen.dart';
+import '../services/onboarding_service.dart';
+import '../widgets/app_tour_overlay.dart';
 import 'publish_screen.dart';
 
 /// Onglet central : particulier → annonce simple ; officiel → Espace Pro.
@@ -37,6 +39,9 @@ class PublishTabRouterState extends State<PublishTabRouter> {
       setState(() {
         _isOfficial = official;
         _loading = false;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        AppTourPresenter.maybeShow(context, AppTourPage.publish);
       });
     }
   }

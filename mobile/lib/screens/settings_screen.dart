@@ -986,6 +986,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             peerId: peerId,
             peerName: contact['display_name']?.toString() ?? 'Centre d\'aide SombaTeka',
             isTeamPeer: true,
+            allowHelpdeskCompose: true,
           ),
         ),
       );

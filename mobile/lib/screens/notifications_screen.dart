@@ -62,8 +62,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         MaterialPageRoute(
           builder: (_) => ChatScreen(
             peerId: peerId,
-            peerName: contact['display_name']?.toString() ?? 'Équipe SombaTeka',
+            peerName: contact['display_name']?.toString() ?? 'Centre d\'aide SombaTeka',
             isTeamPeer: true,
+            allowHelpdeskCompose: false,
           ),
         ),
       );

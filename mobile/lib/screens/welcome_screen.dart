@@ -8,13 +8,13 @@ import '../widgets/sombateka_wordmark.dart';
 
 class _WelcomeSlide {
   const _WelcomeSlide({
-    required this.icon,
+    required this.emoji,
     required this.title,
     required this.body,
     required this.accent,
   });
 
-  final IconData icon;
+  final String emoji;
   final String title;
   final String body;
   final Color accent;
@@ -36,24 +36,21 @@ class _WelcomeScreenState extends State<WelcomeScreen> with TickerProviderStateM
 
   static const _slides = [
     _WelcomeSlide(
-      icon: Icons.storefront_rounded,
+      emoji: '🛍️',
       title: 'Votre marketplace RDC',
-      body:
-          'Des milliers d\'annonces près de chez vous : mode, tech, maison, véhicules et bien plus.',
-      accent: PremiumTheme.gold,
+      body: 'Mode, tech, maison, véhicules… Des milliers d\'annonces près de chez vous, particuliers et boutiques pro.',
+      accent: PremiumTheme.blue,
     ),
     _WelcomeSlide(
-      icon: Icons.account_balance_wallet_rounded,
-      title: 'Mobile Money intégré',
-      body:
-          'Payez en confiance avec MTN, Orange et Moov. Reversement vendeur sécurisé dès le lendemain.',
+      emoji: '💳',
+      title: 'Paiement Mobile Money',
+      body: 'Achetez en confiance, séquestre sécurisé et reversement vendeur le lendemain ouvré.',
       accent: PremiumTheme.emerald,
     ),
     _WelcomeSlide(
-      icon: Icons.verified_user_rounded,
-      title: 'Vendeurs certifiés',
-      body:
-          'Boutiques officielles vérifiées, remise par QR et messagerie directe après chaque achat.',
+      emoji: '✅',
+      title: 'Boutiques certifiées',
+      body: 'Vendeurs officiels vérifiés, remise par QR et messagerie dédiée après chaque commande.',
       accent: Color(0xFF93C5FD),
     ),
   ];
@@ -88,6 +85,11 @@ class _WelcomeScreenState extends State<WelcomeScreen> with TickerProviderStateM
     _startAutoSlide();
   }
 
+  void _skipToAuth() {
+    HapticFeedback.lightImpact();
+    Navigator.pushNamed(context, AppRoutes.auth);
+  }
+
   @override
   void dispose() {
     _autoTimer?.cancel();
@@ -103,21 +105,32 @@ class _WelcomeScreenState extends State<WelcomeScreen> with TickerProviderStateM
       body: Stack(
         children: [
           Container(decoration: PremiumTheme.heroGradient),
-          Positioned(top: -80, right: -40, child: _orb(200, PremiumTheme.gold.withValues(alpha: 0.15))),
+          Positioned(top: -80, right: -40, child: _orb(200, PremiumTheme.blue.withValues(alpha: 0.18))),
           Positioned(bottom: 120, left: -60, child: _orb(180, PremiumTheme.emerald.withValues(alpha: 0.12))),
           SafeArea(
             child: FadeTransition(
               opacity: _fade,
               child: Column(
                 children: [
-                  const SizedBox(height: 20),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
+                    child: Row(
+                      children: [
+                        const Spacer(),
+                        TextButton(
+                          onPressed: _skipToAuth,
+                          child: Text('Passer l\'intro', style: PremiumTheme.label.copyWith(color: Colors.white70)),
+                        ),
+                      ],
+                    ),
+                  ),
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 24),
                     child: Center(
-                      child: SombaTekaWordmark(iconSize: 64, fontSize: 34, animate: true),
+                      child: SombaTekaWordmark(iconSize: 72, fontSize: 36, animate: true),
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 12),
                   Expanded(
                     child: PageView.builder(
                       controller: _page,
@@ -138,7 +151,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with TickerProviderStateM
                       child: Column(
                         children: [
                           _cta(
-                            label: 'Créer un compte',
+                            label: '🚀 Créer un compte',
                             filled: true,
                             onTap: () => Navigator.pushNamed(context, AppRoutes.auth),
                           ),
@@ -154,7 +167,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with TickerProviderStateM
                           ),
                           const SizedBox(height: 12),
                           Text(
-                            AppStrings.country,
+                            '🇨🇩 ${AppStrings.country}',
                             style: PremiumTheme.label.copyWith(color: Colors.white38, fontSize: 10),
                             textAlign: TextAlign.center,
                           ),
@@ -185,14 +198,18 @@ class _WelcomeScreenState extends State<WelcomeScreen> with TickerProviderStateM
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                width: 96,
-                height: 96,
+                width: 108,
+                height: 108,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: s.accent.withValues(alpha: 0.2),
-                  border: Border.all(color: Colors.white24),
+                  color: s.accent.withValues(alpha: 0.18),
+                  border: Border.all(color: Colors.white24, width: 2),
+                  boxShadow: [
+                    BoxShadow(color: s.accent.withValues(alpha: 0.2), blurRadius: 24, offset: const Offset(0, 8)),
+                  ],
                 ),
-                child: Icon(s.icon, size: 44, color: Colors.white),
+                alignment: Alignment.center,
+                child: Text(s.emoji, style: const TextStyle(fontSize: 48)),
               ),
               const SizedBox(height: 24),
               Text(s.title, style: PremiumTheme.display.copyWith(fontSize: 24), textAlign: TextAlign.center),
@@ -221,7 +238,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with TickerProviderStateM
             width: i == _index ? 28 : 8,
             height: 8,
             decoration: BoxDecoration(
-              color: i == _index ? PremiumTheme.gold : Colors.white24,
+              color: i == _index ? Colors.white : Colors.white24,
               borderRadius: BorderRadius.circular(8),
             ),
           ),

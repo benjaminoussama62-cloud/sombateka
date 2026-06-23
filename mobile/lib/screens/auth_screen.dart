@@ -263,7 +263,7 @@ class _AuthScreenState extends State<AuthScreen>
               height: 140,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: PremiumTheme.gold.withValues(alpha: 0.12),
+                color: PremiumTheme.blue.withValues(alpha: 0.15),
               ),
             ),
           ),
@@ -295,7 +295,7 @@ class _AuthScreenState extends State<AuthScreen>
                   AnimatedSwitcher(
                     duration: const Duration(milliseconds: 300),
                     child: Text(
-                      isRegister ? 'Créer un compte' : 'Se connecter',
+                      isRegister ? '✨ Créer un compte' : '👋 Se connecter',
                       key: ValueKey(isRegister),
                       style: PremiumTheme.display.copyWith(fontSize: 26),
                     ),
