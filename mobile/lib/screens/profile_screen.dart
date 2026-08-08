@@ -2,11 +2,13 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/onboarding_service.dart';
+import '../config/app_config.dart';
 import '../widgets/app_tour_overlay.dart';
 import '../widgets/premium_profile_header.dart';
+import '../widgets/account_setup_banner.dart';
+import '../widgets/finalize_account_sheet.dart';
 import '../widgets/app_confirm_dialog.dart';
 import '../theme/premium_theme.dart';
-import '../components/product_card.dart';
 import '../utils/constants.dart';
 import '../utils/listing_utils.dart';
 import '../services/data_service.dart';
@@ -15,20 +17,25 @@ import '../utils/app_feedback.dart';
 import 'business_hub_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  const ProfileScreen({super.key, this.onOpenMessages, this.onOpenBusinessHub});
+
+  /// Bascule vers l'onglet Messages (coque principale) — évite une page sans navigation.
+  final VoidCallback? onOpenMessages;
+
+  /// Bascule vers l'onglet Espace Pro (menu principal).
+  final VoidCallback? onOpenBusinessHub;
 
   @override
   State<ProfileScreen> createState() => ProfileScreenState();
 }
 
-class ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMixin {
-  late AnimationController _statsController;
-  late Animation<double> _statsAnimation;
+class ProfileScreenState extends State<ProfileScreen> {
   int _selectedTab = 0;
   final DataService _dataService = DataService();
   bool _checking = true;
   bool _verified = false;
-  int _messageCount = 0;
+  int _finalizedPeopleCount = 0;
+  int _activeListingsCount = 0;
   List<Map<String, dynamic>> _reviews = [];
 
   Map<String, dynamic>? get _user => _dataService.currentUser;
@@ -41,21 +48,6 @@ class ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMi
 
   List<String> get _tabs =>
       _isOfficial ? ['Mon catalogue', 'Favoris', 'Avis'] : ['Mes annonces', 'Favoris', 'Avis'];
-
-  Map<String, dynamic> get _stats {
-    final uid = _userId;
-    if (uid != null && uid.isNotEmpty) {
-      return _dataService.getUserStats(uid);
-    }
-    return {
-      'totalListings': 0,
-      'activeListings': 0,
-      'soldListings': 0,
-      'totalViews': 0,
-      'totalLikes': 0,
-      'averageRating': 0.0,
-    };
-  }
 
   // Annonces réelles de l'utilisateur
   List<Map<String, dynamic>> get _userListings {
@@ -77,21 +69,34 @@ class ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMi
   void initState() {
     super.initState();
     _loadProfile();
-    _statsController = AnimationController(
-      duration: const Duration(milliseconds: 800),
-      vsync: this,
-    );
-    _statsAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _statsController, curve: Curves.easeOutBack),
-    );
-    _statsController.forward();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       AppTourPresenter.maybeShow(context, AppTourPage.profile);
     });
   }
 
+  int get _activeListingsCountLive {
+    final uid = _userId;
+    if (uid == null) return _activeListingsCount;
+    final mine = _dataService.myListings.isNotEmpty
+        ? _dataService.myListings
+        : _dataService.getUserListings(uid);
+    return mine.where((l) {
+      final s = (l['status']?.toString() ?? 'active').toLowerCase();
+      return s == 'active';
+    }).length;
+  }
+
   /// Recharge nom, photo et stats depuis l’API (appelé à l’ouverture de l’onglet Profil).
   Future<void> reloadProfile() => _loadProfile();
+
+  void _openClientsInbox() {
+    final open = widget.onOpenMessages;
+    if (open != null) {
+      open();
+      return;
+    }
+    Navigator.pushNamed(context, AppRoutes.messages);
+  }
 
   Future<void> _loadProfile() async {
     try {
@@ -102,8 +107,11 @@ class ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMi
         await _dataService.refreshMyListings();
         await _dataService.refreshConversations();
         _reviews = await _dataService.fetchMyReviews();
-        final uid = _userId;
-        if (uid != null) _messageCount = _dataService.getUserConversations(uid).length;
+        _finalizedPeopleCount = await _dataService.countFinalizedOperationPeople();
+        _activeListingsCount = _dataService.myListings.where((l) {
+          final s = (l['status']?.toString() ?? 'active').toLowerCase();
+          return s == 'active';
+        }).length;
       }
       if (mounted) {
         setState(() {
@@ -118,22 +126,30 @@ class ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMi
 
   @override
   void dispose() {
-    _statsController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    // Fond navy dès l'ouverture — jamais de flash blanc (scaffold parent / 1er paint).
+    const profileBg = PremiumTheme.homeHeaderColor;
     if (_checking) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator(color: PremiumTheme.blue)),
+        backgroundColor: profileBg,
+        body: Center(child: CircularProgressIndicator(color: Colors.white)),
       );
     }
     if (!_verified) {
       return _buildLoginGate(context);
     }
-    return Scaffold(
-      backgroundColor: PremiumTheme.surface,
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+      ),
+      child: Scaffold(
+      backgroundColor: profileBg,
       body: SingleChildScrollView(
         child: Column(
           children: [
@@ -145,6 +161,8 @@ class ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMi
               status: _user?['status']?.toString() ?? AppStatus.ordinary,
               averageRating: (_user?['average_rating'] as num?)?.toDouble() ?? 0,
               reviewCount: (_user?['review_count'] as num?)?.toInt() ?? 0,
+              accountVerified:
+                  _user?['account_verified'] == true || _user?['email_verified'] == true,
               onAvatarTap: () async {
                 final ok = await Navigator.pushNamed(context, AppRoutes.editProfile);
                 if (ok == true) _loadProfile();
@@ -154,119 +172,32 @@ class ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMi
                 _loadProfile();
               },
             ),
-            if (_user != null)
+
+            if (_dataService.needsAccountSetup(_user)) ...[
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                    decoration: BoxDecoration(
-                      gradient: _isOfficial
-                          ? const LinearGradient(colors: [PremiumTheme.gold, Color(0xFFF59E0B)])
-                          : null,
-                      color: _isOfficial ? null : PremiumTheme.surface,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: _isOfficial ? PremiumTheme.gold : const Color(0xFFE2E8F0),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          _isOfficial ? Icons.verified_rounded : Icons.person_outline_rounded,
-                          size: 16,
-                          color: _isOfficial ? PremiumTheme.navy : PremiumTheme.textMuted,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          _isOfficial ? 'Boutique officielle SombaTeka' : 'Compte particulier',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                            color: _isOfficial ? PremiumTheme.navy : PremiumTheme.textMuted,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                child: AccountSetupBanner(
+                  needsPhone: _dataService.needsPhone(_user),
+                  needsPassword: _dataService.needsPassword(_user),
+                  onTap: () async {
+                    final ok = await showFinalizeAccountSheet(context);
+                    if (ok == true) _loadProfile();
+                  },
                 ),
               ),
+            ],
 
             if (_isOfficial) ...[
               const SizedBox(height: 16),
               _buildOfficialProPanel(),
             ],
 
-            const SizedBox(height: 20),
-            ScaleTransition(
-              scale: _statsAnimation,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Row(
-                  children: _isOfficial
-                      ? [
-                          Expanded(
-                            child: _buildStatCard(
-                              '${_dataService.getBusinessDashboardStats()['productCount'] ?? 0}',
-                              'Produits',
-                              Icons.inventory_2_outlined,
-                              PremiumTheme.blue,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _buildStatCard(
-                              '${_dataService.getBusinessDashboardStats()['publicationCount'] ?? 0}',
-                              'Publications',
-                              Icons.collections_bookmark_outlined,
-                              PremiumTheme.emerald,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _buildStatCard(
-                              '$_messageCount',
-                              'Messages',
-                              Icons.chat_rounded,
-                              PremiumTheme.gold,
-                            ),
-                          ),
-                        ]
-                      : [
-                          Expanded(
-                            child: _buildStatCard(
-                              '${_stats['totalListings']}',
-                              'Annonces',
-                              Icons.list_rounded,
-                              AppColors.primary,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: _buildStatCard(
-                              '${_stats['activeListings']}',
-                              'Actives',
-                              Icons.check_circle_outline,
-                              AppColors.secondary,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: _buildStatCard(
-                              '$_messageCount',
-                              'Messages',
-                              Icons.chat_rounded,
-                              AppColors.danger,
-                            ),
-                          ),
-                        ],
-                ),
-              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+              child: _buildProfileStatsRow(),
             ),
-            
-            const SizedBox(height: 30),
+
+            const SizedBox(height: 24),
             
             // Tabs
             Container(
@@ -323,28 +254,32 @@ class ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMi
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.store_rounded, color: Colors.black, size: 24),
-                        SizedBox(width: 8),
-                        Text(
-                          "Devenir vendeur professionnel",
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.black,
-                          ),
-                        ),
-                      ],
+                    const Text(
+                      "Devenir vendeur officiel",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.black,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      "Accédez à des fonctionnalités premium : paiement intégré, stock illimité, commission variable",
+                      "Badge certifié, catalogues illimités, mise en avant sur l'accueil et messagerie clients — la vitrine digne d'une vraie boutique.",
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                         color: Colors.black87,
                       ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        _GoldChip(label: 'KYC'),
+                        _GoldChip(label: 'Catalogues'),
+                        _GoldChip(label: 'Priorité accueil'),
+                      ],
                     ),
                     const SizedBox(height: 16),
                     SizedBox(
@@ -363,7 +298,7 @@ class ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMi
                           ),
                         ),
                         child: const Text(
-                          "Faire la demande",
+                          "Demander le badge officiel",
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w800,
@@ -378,6 +313,7 @@ class ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMi
             const SizedBox(height: 120),
           ],
         ),
+      ),
       ),
     );
   }
@@ -426,7 +362,7 @@ class ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMi
                         overflow: TextOverflow.ellipsis,
                       ),
                       Text(
-                        '${stats['productCount']} produits · ${stats['publicationCount']} publications · ${stats['totalStock']} en stock',
+                        'Boutique officielle · ${stats['productCount']} produits · ${stats['publicationCount']} catalogues · ${stats['promotedOnHome']} en avant',
                         style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 11),
                       ),
                     ],
@@ -441,16 +377,34 @@ class ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMi
             child: Row(
               children: [
                 Expanded(child: _proAction(Icons.dashboard_rounded, 'Espace Pro', () {
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const BusinessHubScreen()));
+                  if (widget.onOpenBusinessHub != null) {
+                    widget.onOpenBusinessHub!();
+                    return;
+                  }
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => BusinessHubScreen(
+                        onOpenMessages: () {
+                          Navigator.of(context).pop();
+                          _openClientsInbox();
+                        },
+                      ),
+                    ),
+                  );
                 })),
                 const SizedBox(width: 8),
-                Expanded(child: _proAction(Icons.grid_view_rounded, 'Collection', () {
+                Expanded(child: _proAction(Icons.grid_view_rounded, 'Catalogue', () {
                   Navigator.pushNamed(context, AppRoutes.officialCatalogPublish);
                 })),
                 const SizedBox(width: 8),
-                Expanded(child: _proAction(Icons.payments_rounded, 'Paiements', () {
-                  Navigator.pushNamed(context, AppRoutes.paymentSettings);
-                })),
+                Expanded(child: _proAction(Icons.chat_rounded, 'Clients', _openClientsInbox)),
+                if (AppConfig.paymentsEnabled) ...[
+                  const SizedBox(width: 8),
+                  Expanded(child: _proAction(Icons.payments_rounded, 'Paiements', () {
+                    Navigator.pushNamed(context, AppRoutes.paymentSettings);
+                  })),
+                ],
               ],
             ),
           ),
@@ -484,33 +438,64 @@ class ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMi
     );
   }
 
-  Widget _buildStatCard(String value, String label, IconData icon, Color color) {
+  Widget _buildProfileStatsRow() {
+    final active = _activeListingsCountLive;
+    return Column(
+      children: [
+        _profileStatCard(
+          value: '$active',
+          label: 'Annonces actives',
+          subtitle: 'En ligne sur SombaTeka',
+          icon: Icons.check_circle_outline,
+          color: PremiumTheme.emerald,
+          fullWidth: true,
+        ),
+        const SizedBox(height: 10),
+        _profileStatCard(
+          value: '$_finalizedPeopleCount',
+          label: 'Opérations finalisées',
+          subtitle: 'Personnes · achat ou vente confirmé',
+          icon: Icons.handshake_rounded,
+          color: PremiumTheme.blue,
+          fullWidth: true,
+        ),
+      ],
+    );
+  }
+
+  Widget _profileStatCard({
+    required String value,
+    required String label,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+    bool fullWidth = false,
+  }) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      width: fullWidth ? double.infinity : null,
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+        color: Colors.white,
+        borderRadius: PremiumTheme.radiusMd,
+        border: Border.all(color: const Color(0xFFE8ECF4)),
+        boxShadow: PremiumTheme.softShadow,
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 30, color: color),
+          Row(
+            children: [
+              Icon(icon, color: color, size: 20),
+              const Spacer(),
+              Text(
+                value,
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: color, height: 1),
+              ),
+            ],
+          ),
           const SizedBox(height: 8),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-              color: color,
-            ),
-          ),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textSecondary,
-            ),
-          ),
+          Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
+          Text(subtitle, style: PremiumTheme.label.copyWith(fontSize: 9, height: 1.25)),
         ],
       ),
     );
@@ -815,8 +800,9 @@ class ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMi
 
   Widget _buildLoginGate(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: PremiumTheme.heroGradient,
+      backgroundColor: PremiumTheme.homeHeaderColor,
+      body: ColoredBox(
+        color: PremiumTheme.homeHeaderColor,
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(28),
@@ -840,7 +826,7 @@ class ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMi
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Connectez-vous avec votre numéro de téléphone (OTP) pour accéder à votre profil, vos annonces et vos favoris sur SombaTeka.',
+                  'Connectez-vous par email, Google ou Apple pour accéder à votre profil, publier et contacter les vendeurs.',
                   style: PremiumTheme.body.copyWith(color: Colors.white70, height: 1.5),
                   textAlign: TextAlign.center,
                 ),
@@ -945,6 +931,27 @@ class ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMi
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _GoldChip extends StatelessWidget {
+  const _GoldChip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.black87),
       ),
     );
   }

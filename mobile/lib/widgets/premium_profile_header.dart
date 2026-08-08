@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/premium_theme.dart';
 import '../utils/constants.dart';
 import 'user_avatar.dart';
+import 'account_verification_badge.dart';
 
 class PremiumProfileHeader extends StatelessWidget {
   const PremiumProfileHeader({
@@ -15,6 +16,7 @@ class PremiumProfileHeader extends StatelessWidget {
     this.onAvatarTap,
     this.averageRating = 0,
     this.reviewCount = 0,
+    this.accountVerified = false,
   });
 
   final String name;
@@ -26,15 +28,17 @@ class PremiumProfileHeader extends StatelessWidget {
   final VoidCallback? onAvatarTap;
   final double averageRating;
   final int reviewCount;
+  final bool accountVerified;
 
   @override
   Widget build(BuildContext context) {
     final isOfficial = status == AppStatus.official || status == 'official_seller';
-    return Container(
-      width: double.infinity,
-      decoration: PremiumTheme.heroGradient,
+    // Material + color (pas seulement BoxDecoration) — évite fond blanc au 1er paint (web/PWA).
+    return Material(
+      color: PremiumTheme.homeHeaderColor,
       child: SafeArea(
         bottom: false,
+        minimum: EdgeInsets.zero,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
           child: Column(
@@ -91,6 +95,10 @@ class PremiumProfileHeader extends StatelessWidget {
                   ],
                 ),
               const SizedBox(height: 12),
+              if (!isOfficial) ...[
+                AccountVerificationBadge(verified: accountVerified, lightOnDark: true),
+                const SizedBox(height: 10),
+              ],
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                 decoration: BoxDecoration(
