@@ -131,12 +131,11 @@ class ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Fond navy dès l'ouverture — jamais de flash blanc (scaffold parent / 1er paint).
-    const profileBg = PremiumTheme.homeHeaderColor;
+    // Image 1 : header bleu fixe + corps blanc. Pas de fond navy global (évite flash au scroll).
     if (_checking) {
       return const Scaffold(
-        backgroundColor: profileBg,
-        body: Center(child: CircularProgressIndicator(color: Colors.white)),
+        backgroundColor: PremiumTheme.surface,
+        body: Center(child: CircularProgressIndicator(color: PremiumTheme.blue)),
       );
     }
     if (!_verified) {
@@ -149,9 +148,8 @@ class ProfileScreenState extends State<ProfileScreen> {
         statusBarBrightness: Brightness.dark,
       ),
       child: Scaffold(
-      backgroundColor: profileBg,
-      body: SingleChildScrollView(
-        child: Column(
+        backgroundColor: PremiumTheme.surface,
+        body: Column(
           children: [
             PremiumProfileHeader(
               name: _dataService.profileDisplayName(_user),
@@ -172,148 +170,160 @@ class ProfileScreenState extends State<ProfileScreen> {
                 _loadProfile();
               },
             ),
-
-            if (_dataService.needsAccountSetup(_user)) ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                child: AccountSetupBanner(
-                  needsPhone: _dataService.needsPhone(_user),
-                  needsPassword: _dataService.needsPassword(_user),
-                  onTap: () async {
-                    final ok = await showFinalizeAccountSheet(context);
-                    if (ok == true) _loadProfile();
-                  },
-                ),
-              ),
-            ],
-
-            if (_isOfficial) ...[
-              const SizedBox(height: 16),
-              _buildOfficialProPanel(),
-            ],
-
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-              child: _buildProfileStatsRow(),
-            ),
-
-            const SizedBox(height: 24),
-            
-            // Tabs
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: PremiumTheme.radiusMd,
-                border: Border.all(color: const Color(0xFFE8ECF4)),
-              ),
-              child: Row(
-                children: List.generate(_tabs.length, (index) {
-                  return Expanded(
-                    child: GestureDetector(
-                      onTap: () => setState(() => _selectedTab = index),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        decoration: BoxDecoration(
-                          color: _selectedTab == index ? PremiumTheme.blue : Colors.transparent,
-                          borderRadius: PremiumTheme.radiusMd,
-                        ),
-                        child: Text(
-                          _tabs[index],
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: _selectedTab == index ? Colors.white : PremiumTheme.textMuted,
+            Expanded(
+              child: ColoredBox(
+                color: PremiumTheme.surface,
+                child: SingleChildScrollView(
+                  physics: const ClampingScrollPhysics(),
+                  child: Column(
+                    children: [
+                      if (_dataService.needsAccountSetup(_user)) ...[
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                          child: AccountSetupBanner(
+                            needsPhone: _dataService.needsPhone(_user),
+                            needsPassword: _dataService.needsPassword(_user),
+                            onTap: () async {
+                              final ok = await showFinalizeAccountSheet(context);
+                              if (ok == true) _loadProfile();
+                            },
                           ),
                         ),
-                      ),
-                    ),
-                  );
-                }),
-              ),
-            ),
-            
-            const SizedBox(height: 20),
-
-            // Tab content
-            _buildTabContent(),
-            
-            // Actions
-            if (!_isOfficial)
-              Container(
-                margin: const EdgeInsets.all(20),
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [AppColors.gold, AppColors.gold.withOpacity(0.8)],
-                  ),
-                  borderRadius: BorderRadius.circular(AppConstants.borderRadius),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      "Devenir vendeur officiel",
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.black,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      "Badge certifié, catalogues illimités, mise en avant sur l'accueil et messagerie clients — la vitrine digne d'une vraie boutique.",
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        _GoldChip(label: 'KYC'),
-                        _GoldChip(label: 'Catalogues'),
-                        _GoldChip(label: 'Priorité accueil'),
                       ],
-                    ),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: () async {
-                          await Navigator.pushNamed(context, AppRoutes.officialSeller);
-                          _loadProfile();
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.black,
-                          foregroundColor: AppColors.gold,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(AppConstants.borderRadius),
-                          ),
+                      if (_isOfficial) ...[
+                        const SizedBox(height: 16),
+                        _buildOfficialProPanel(),
+                      ],
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                        child: _buildProfileStatsRow(),
+                      ),
+                      const SizedBox(height: 24),
+                      Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 20),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: PremiumTheme.radiusMd,
+                          border: Border.all(color: const Color(0xFFE8ECF4)),
                         ),
-                        child: const Text(
-                          "Demander le badge officiel",
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                          ),
+                        child: Row(
+                          children: List.generate(_tabs.length, (index) {
+                            return Expanded(
+                              child: GestureDetector(
+                                onTap: () => setState(() => _selectedTab = index),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 200),
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  decoration: BoxDecoration(
+                                    color: _selectedTab == index
+                                        ? PremiumTheme.blue
+                                        : Colors.transparent,
+                                    borderRadius: PremiumTheme.radiusMd,
+                                  ),
+                                  child: Text(
+                                    _tabs[index],
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: _selectedTab == index
+                                          ? Colors.white
+                                          : PremiumTheme.textMuted,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 20),
+                      _buildTabContent(),
+                      if (!_isOfficial)
+                        Container(
+                          margin: const EdgeInsets.all(20),
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                AppColors.gold,
+                                AppColors.gold.withValues(alpha: 0.8),
+                              ],
+                            ),
+                            borderRadius:
+                                BorderRadius.circular(AppConstants.borderRadius),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                "Devenir vendeur officiel",
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.black,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              const Text(
+                                "Badge certifié, catalogues illimités, mise en avant sur l'accueil et messagerie clients — la vitrine digne d'une vraie boutique.",
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              const Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: [
+                                  _GoldChip(label: 'KYC'),
+                                  _GoldChip(label: 'Catalogues'),
+                                  _GoldChip(label: 'Priorité accueil'),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton(
+                                  onPressed: () async {
+                                    await Navigator.pushNamed(
+                                      context,
+                                      AppRoutes.officialSeller,
+                                    );
+                                    _loadProfile();
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.black,
+                                    foregroundColor: AppColors.gold,
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(
+                                        AppConstants.borderRadius,
+                                      ),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    "Demander le badge officiel",
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      const SizedBox(height: 120),
+                    ],
+                  ),
                 ),
               ),
-            
-            const SizedBox(height: 120),
+            ),
           ],
         ),
-      ),
       ),
     );
   }
