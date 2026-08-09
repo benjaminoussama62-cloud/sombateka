@@ -4,6 +4,7 @@ import '../utils/constants.dart';
 import 'user_avatar.dart';
 import 'account_verification_badge.dart';
 
+/// Bandeau profil — toujours bleu, destiné à rester épinglé hors du scroll.
 class PremiumProfileHeader extends StatelessWidget {
   const PremiumProfileHeader({
     super.key,
@@ -33,108 +34,100 @@ class PremiumProfileHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isOfficial = status == AppStatus.official || status == 'official_seller';
-    // Material + color — header toujours bleu dès le 1er frame (pas de flash blanc web).
-    return Material(
+    final topInset = MediaQuery.paddingOf(context).top;
+
+    // Couleur peinte AVANT le SafeArea — jamais de bande blanche sous la status bar.
+    return ColoredBox(
       color: PremiumTheme.homeHeaderColor,
-      elevation: 0,
-      child: SizedBox(
-        width: double.infinity,
-        child: ColoredBox(
-          color: PremiumTheme.homeHeaderColor,
-          child: SafeArea(
-            bottom: false,
-            minimum: EdgeInsets.zero,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-              child: Column(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(20, topInset + 12, 20, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Text('Mon profil', style: PremiumTheme.display.copyWith(fontSize: 22)),
+                const Spacer(),
+                IconButton(
+                  onPressed: onSettings,
+                  icon: const Icon(Icons.settings_rounded, color: Colors.white),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(colors: [PremiumTheme.gold, Color(0xFFF59E0B)]),
+              ),
+              child: UserAvatar(
+                imageUrl: avatarUrl,
+                name: name,
+                radius: 48,
+                onTap: onAvatarTap,
+                showEditBadge: onAvatarTap != null,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(name, style: PremiumTheme.display.copyWith(fontSize: 24)),
+            const SizedBox(height: 6),
+            Text(phone, style: PremiumTheme.body.copyWith(color: Colors.white70)),
+            if (city.trim().isNotEmpty)
+              Text('$city, RDC', style: PremiumTheme.body.copyWith(color: Colors.white54, fontSize: 13)),
+            const SizedBox(height: 10),
+            if (reviewCount > 0)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Row(
-                    children: [
-                      Text('Mon profil', style: PremiumTheme.display.copyWith(fontSize: 22)),
-                      const Spacer(),
-                      IconButton(
-                        onPressed: onSettings,
-                        icon: const Icon(Icons.settings_rounded, color: Colors.white),
-                      ),
-                    ],
+                  ...List.generate(5, (i) {
+                    final filled = i < averageRating.round().clamp(0, 5);
+                    return Icon(
+                      filled ? Icons.star_rounded : Icons.star_border_rounded,
+                      color: PremiumTheme.gold,
+                      size: 20,
+                    );
+                  }),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${averageRating.toStringAsFixed(1)} · $reviewCount avis',
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
                   ),
-                  const SizedBox(height: 20),
-                  Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: LinearGradient(colors: [PremiumTheme.gold, Color(0xFFF59E0B)]),
-                    ),
-                    child: UserAvatar(
-                      imageUrl: avatarUrl,
-                      name: name,
-                      radius: 48,
-                      onTap: onAvatarTap,
-                      showEditBadge: onAvatarTap != null,
-                    ),
+                ],
+              ),
+            const SizedBox(height: 12),
+            if (!isOfficial) ...[
+              AccountVerificationBadge(verified: accountVerified, lightOnDark: true),
+              const SizedBox(height: 10),
+            ],
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              decoration: BoxDecoration(
+                color: isOfficial ? PremiumTheme.gold.withValues(alpha: 0.25) : Colors.white.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: isOfficial ? PremiumTheme.gold : Colors.white24),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    isOfficial ? Icons.verified_rounded : Icons.person_rounded,
+                    size: 16,
+                    color: isOfficial ? PremiumTheme.gold : Colors.white70,
                   ),
-                  const SizedBox(height: 16),
-                  Text(name, style: PremiumTheme.display.copyWith(fontSize: 24)),
-                  const SizedBox(height: 6),
-                  Text(phone, style: PremiumTheme.body.copyWith(color: Colors.white70)),
-                  if (city.trim().isNotEmpty)
-                    Text('$city, RDC', style: PremiumTheme.body.copyWith(color: Colors.white54, fontSize: 13)),
-                  const SizedBox(height: 10),
-                  if (reviewCount > 0)
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        ...List.generate(5, (i) {
-                          final filled = i < averageRating.round().clamp(0, 5);
-                          return Icon(
-                            filled ? Icons.star_rounded : Icons.star_border_rounded,
-                            color: PremiumTheme.gold,
-                            size: 20,
-                          );
-                        }),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${averageRating.toStringAsFixed(1)} · $reviewCount avis',
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
-                        ),
-                      ],
-                    ),
-                  const SizedBox(height: 12),
-                  if (!isOfficial) ...[
-                    AccountVerificationBadge(verified: accountVerified, lightOnDark: true),
-                    const SizedBox(height: 10),
-                  ],
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: isOfficial ? PremiumTheme.gold.withValues(alpha: 0.25) : Colors.white.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: isOfficial ? PremiumTheme.gold : Colors.white24),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          isOfficial ? Icons.verified_rounded : Icons.person_rounded,
-                          size: 16,
-                          color: isOfficial ? PremiumTheme.gold : Colors.white70,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          isOfficial ? 'Vendeur officiel' : 'Compte particulier',
-                          style: TextStyle(
-                            color: isOfficial ? PremiumTheme.gold : Colors.white70,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
+                  const SizedBox(width: 6),
+                  Text(
+                    isOfficial ? 'Vendeur officiel' : 'Compte particulier',
+                    style: TextStyle(
+                      color: isOfficial ? PremiumTheme.gold : Colors.white70,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
                     ),
                   ),
                 ],
               ),
             ),
-          ),
+          ],
         ),
       ),
     );
