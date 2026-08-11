@@ -1,7 +1,7 @@
 'use strict';
 
 // Bumper à chaque fix UI critique — force purge des vieux main.dart.js
-const CACHE_NAME = 'sombateka-flutter-v6';
+const CACHE_NAME = 'sombateka-flutter-v7';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();

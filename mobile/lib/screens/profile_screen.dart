@@ -131,7 +131,8 @@ class ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Header BLEU FIXE (ne scrolle jamais) + corps BLANC scrollable.
+    // Header bleu DANS le scroll → disparaît en descendant (comme Paramètres / contenu).
+    // Couleurs : header bleu, corps blanc. Pas d'épingle.
     const headerBg = Color(0xFF0D1B4B);
     if (_checking) {
       return const Scaffold(
@@ -149,11 +150,11 @@ class ProfileScreenState extends State<ProfileScreen> {
         statusBarBrightness: Brightness.dark,
       ),
       child: Scaffold(
-        backgroundColor: headerBg,
-        body: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        backgroundColor: Colors.white,
+        body: ListView(
+          physics: const ClampingScrollPhysics(),
+          padding: EdgeInsets.zero,
           children: [
-            // ÉPINGLÉ — hors ListView → reste en haut même au scroll
             PremiumProfileHeader(
               name: _dataService.profileDisplayName(_user),
               phone: _user?['phone']?.toString() ?? _user?['phone_e164']?.toString() ?? '',
@@ -173,159 +174,152 @@ class ProfileScreenState extends State<ProfileScreen> {
                 _loadProfile();
               },
             ),
-            // Corps blanc uniquement — c’est la seule zone qui scrolle
-            Expanded(
-              child: ColoredBox(
-                color: Colors.white,
-                child: Material(
-                  color: Colors.white,
-                  child: ListView(
-                    physics: const ClampingScrollPhysics(),
-                    padding: EdgeInsets.zero,
-                    children: [
-                      if (_dataService.needsAccountSetup(_user)) ...[
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                          child: AccountSetupBanner(
-                            needsPhone: _dataService.needsPhone(_user),
-                            needsPassword: _dataService.needsPassword(_user),
-                            onTap: () async {
-                              final ok = await showFinalizeAccountSheet(context);
-                              if (ok == true) _loadProfile();
-                            },
-                          ),
-                        ),
-                      ],
-                      if (_isOfficial) ...[
-                        const SizedBox(height: 16),
-                        _buildOfficialProPanel(),
-                      ],
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                        child: _buildProfileStatsRow(),
+            ColoredBox(
+              color: Colors.white,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (_dataService.needsAccountSetup(_user)) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                      child: AccountSetupBanner(
+                        needsPhone: _dataService.needsPhone(_user),
+                        needsPassword: _dataService.needsPassword(_user),
+                        onTap: () async {
+                          final ok = await showFinalizeAccountSheet(context);
+                          if (ok == true) _loadProfile();
+                        },
                       ),
-                      const SizedBox(height: 24),
-                      Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 20),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: PremiumTheme.radiusMd,
-                          border: Border.all(color: const Color(0xFFE8ECF4)),
-                        ),
-                        child: Row(
-                          children: List.generate(_tabs.length, (index) {
-                            return Expanded(
-                              child: GestureDetector(
-                                onTap: () => setState(() => _selectedTab = index),
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 200),
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                  decoration: BoxDecoration(
-                                    color: _selectedTab == index
-                                        ? PremiumTheme.blue
-                                        : Colors.transparent,
-                                    borderRadius: PremiumTheme.radiusMd,
-                                  ),
-                                  child: Text(
-                                    _tabs[index],
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w700,
-                                      color: _selectedTab == index
-                                          ? Colors.white
-                                          : PremiumTheme.textMuted,
-                                    ),
-                                  ),
+                    ),
+                  ],
+                  if (_isOfficial) ...[
+                    const SizedBox(height: 16),
+                    _buildOfficialProPanel(),
+                  ],
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                    child: _buildProfileStatsRow(),
+                  ),
+                  const SizedBox(height: 24),
+                  Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: PremiumTheme.radiusMd,
+                      border: Border.all(color: const Color(0xFFE8ECF4)),
+                    ),
+                    child: Row(
+                      children: List.generate(_tabs.length, (index) {
+                        return Expanded(
+                          child: GestureDetector(
+                            onTap: () => setState(() => _selectedTab = index),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              decoration: BoxDecoration(
+                                color: _selectedTab == index
+                                    ? PremiumTheme.blue
+                                    : Colors.transparent,
+                                borderRadius: PremiumTheme.radiusMd,
+                              ),
+                              child: Text(
+                                _tabs[index],
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: _selectedTab == index
+                                      ? Colors.white
+                                      : PremiumTheme.textMuted,
                                 ),
                               ),
-                            );
-                          }),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      _buildTabContent(),
-                      if (!_isOfficial)
-                        Container(
-                          margin: const EdgeInsets.all(20),
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                AppColors.gold,
-                                AppColors.gold.withValues(alpha: 0.8),
-                              ],
                             ),
-                            borderRadius:
-                                BorderRadius.circular(AppConstants.borderRadius),
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                        );
+                      }),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  _buildTabContent(),
+                  if (!_isOfficial)
+                    Container(
+                      margin: const EdgeInsets.all(20),
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            AppColors.gold,
+                            AppColors.gold.withValues(alpha: 0.8),
+                          ],
+                        ),
+                        borderRadius:
+                            BorderRadius.circular(AppConstants.borderRadius),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            "Devenir vendeur officiel",
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.black,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            "Badge certifié, catalogues illimités, mise en avant sur l'accueil et messagerie clients — la vitrine digne d'une vraie boutique.",
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          const Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
                             children: [
-                              const Text(
-                                "Devenir vendeur officiel",
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.black,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              const Text(
-                                "Badge certifié, catalogues illimités, mise en avant sur l'accueil et messagerie clients — la vitrine digne d'une vraie boutique.",
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.black87,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              const Wrap(
-                                spacing: 6,
-                                runSpacing: 6,
-                                children: [
-                                  _GoldChip(label: 'KYC'),
-                                  _GoldChip(label: 'Catalogues'),
-                                  _GoldChip(label: 'Priorité accueil'),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-                              SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton(
-                                  onPressed: () async {
-                                    await Navigator.pushNamed(
-                                      context,
-                                      AppRoutes.officialSeller,
-                                    );
-                                    _loadProfile();
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.black,
-                                    foregroundColor: AppColors.gold,
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(
-                                        AppConstants.borderRadius,
-                                      ),
-                                    ),
-                                  ),
-                                  child: const Text(
-                                    "Demander le badge officiel",
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ),
-                              ),
+                              _GoldChip(label: 'KYC'),
+                              _GoldChip(label: 'Catalogues'),
+                              _GoldChip(label: 'Priorité accueil'),
                             ],
                           ),
-                        ),
-                      const SizedBox(height: 120),
-                    ],
-                  ),
-                ),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: () async {
+                                await Navigator.pushNamed(
+                                  context,
+                                  AppRoutes.officialSeller,
+                                );
+                                _loadProfile();
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.black,
+                                foregroundColor: AppColors.gold,
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(
+                                    AppConstants.borderRadius,
+                                  ),
+                                ),
+                              ),
+                              child: const Text(
+                                "Demander le badge officiel",
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 120),
+                ],
               ),
             ),
           ],
