@@ -1,40 +1,296 @@
-<!DOCTYPE html><html><head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
+<!DOCTYPE html><html lang="fr"><head>
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover, interactive-widget=resizes-content">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <meta http-equiv="Pragma" content="no-cache">
-  <meta http-equiv="Expires" content="0">
-  <meta name="description" content="ST (SombaTeka) — marketplace RDC.">
+  <meta name="description" content="SombaTeka : marketplace en ligne en RDC. Achetez et vendez à Kinshasa et partout au Congo. Annonces, messagerie, vendeurs certifiés.">
 
-  <!-- Local dev helper: tells the Flutter app where FastAPI is. -->
+  <link rel="canonical" href="https://sombatekaonline.com/">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="SombaTeka">
+  <meta property="og:title" content="SombaTeka — Marketplace en ligne RDC">
+  <meta property="og:description" content="Achetez et vendez en toute confiance en République Démocratique du Congo. Annonces, messagerie et vendeurs certifiés.">
+  <meta property="og:url" content="https://sombatekaonline.com/">
+  <meta property="og:image" content="https://sombatekaonline.com/assets/og-image.png">
+  <meta property="og:locale" content="fr_CD">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="SombaTeka — Marketplace RDC">
+  <meta name="twitter:description" content="La marketplace premium de la RDC — annonces, messagerie, vendeurs certifiés.">
+  <meta name="twitter:image" content="https://sombatekaonline.com/assets/og-image.png">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://sombatekaonline.com/#organization",
+        "name": "SombaTeka",
+        "url": "https://sombatekaonline.com",
+        "logo": "https://sombatekaonline.com/icons/Icon-512.png",
+        "description": "Marketplace en ligne en République Démocratique du Congo.",
+        "email": "support@sombatekaonline.com",
+        "areaServed": { "@type": "Country", "name": "Democratic Republic of the Congo" }
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://sombatekaonline.com/#website",
+        "url": "https://sombatekaonline.com",
+        "name": "SombaTeka",
+        "publisher": { "@id": "https://sombatekaonline.com/#organization" },
+        "inLanguage": "fr-CD"
+      },
+      {
+        "@type": "WebApplication",
+        "name": "SombaTeka",
+        "url": "https://sombatekaonline.com/",
+        "applicationCategory": "ShoppingApplication",
+        "operatingSystem": "Web, Android, iOS",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+      }
+    ]
+  }
+  </script>
+
+  <meta name="st-build" content="">
   <meta name="st-api-base" content="">
+  <meta name="google-signin-client_id" content="">
 
-  <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="ST">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="SombaTeka">
+  <meta name="theme-color" content="#0D1B4B">
+  <meta name="format-detection" content="telephone=no">
+
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/Icon-192.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/Icon-192.png">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
-  <link rel="icon" type="image/png" href="favicon.png">
-
-  <title>ST</title>
+  <title>SombaTeka — Marketplace en ligne RDC</title>
   <link rel="manifest" href="manifest.json">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap">
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap">
+
+  <!-- Material Icons — obligatoire pour PWA iOS (cache séparé du navigateur) -->
+  <link rel="preload" href="fonts/MaterialIcons-Regular.otf" as="font" type="font/otf" crossorigin="anonymous">
+  <link rel="preload" href="assets/fonts/MaterialIcons-Regular.otf" as="font" type="font/otf" crossorigin="anonymous">
+
+  <style>
+    @font-face {
+      font-family: 'MaterialIcons';
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+      src: url('fonts/MaterialIcons-Regular.otf') format('opentype'),
+           url('assets/fonts/MaterialIcons-Regular.otf') format('opentype');
+    }
+
+    :root {
+      --st-app-height: 100dvh;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: #0D1B4B;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    html:not(.pwa-standalone) body {
+      min-height: 100%;
+      min-height: 100dvh;
+    }
+
+    /* PWA : pas de rubber-band, mais AUCUNE taille custom sur Flutter
+       (sinon décalage Y des clics — boutons réagissent "au-dessus"). */
+    html.pwa-standalone,
+    html.pwa-standalone body {
+      overflow: hidden;
+      overscroll-behavior: none;
+      width: 100%;
+      height: 100%;
+      position: fixed;
+      inset: 0;
+    }
+
+    /*
+      CRITIQUE hit-testing PWA iOS :
+      Ne PAS forcer height/width/touch-action sur flutter-view.
+      Si le CSS dit visualViewport.height et Flutter utilise innerHeight,
+      les clics se décalent vers le HAUT du bouton (symptôme exact).
+      Laisser le moteur Flutter dimensionner sa surface.
+    */
+    flutter-view,
+    flt-glass-pane,
+    flt-scene-host {
+      position: absolute;
+      inset: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    flt-semantics-host,
+    flt-semantics-placeholder {
+      pointer-events: none !important;
+    }
+
+    #st-splash {
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      background: #0D1B4B;
+      transition: opacity 280ms ease, visibility 280ms ease;
+    }
+
+    #st-splash.st-splash-hide {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none !important;
+    }
+
+    .st-splash-orb {
+      position: absolute;
+      border-radius: 50%;
+      pointer-events: none;
+      animation: st-orb-float 8s ease-in-out infinite;
+    }
+
+    .st-splash-orb-a {
+      width: 220px;
+      height: 220px;
+      top: -40px;
+      right: -30px;
+      background: radial-gradient(circle, rgba(37, 99, 235, 0.22) 0%, transparent 70%);
+    }
+
+    .st-splash-orb-b {
+      width: 260px;
+      height: 260px;
+      bottom: 40px;
+      left: -70px;
+      background: radial-gradient(circle, rgba(16, 185, 129, 0.14) 0%, transparent 70%);
+      animation-delay: -3s;
+    }
+
+    .st-splash-orb-c {
+      width: 90px;
+      height: 90px;
+      top: 120px;
+      left: 40px;
+      background: radial-gradient(circle, rgba(255, 255, 255, 0.06) 0%, transparent 70%);
+      animation-delay: -1.5s;
+    }
+
+    @keyframes st-orb-float {
+      0%, 100% { transform: translate(0, 0); }
+      50% { transform: translate(10px, -14px); }
+    }
+
+    .st-splash-brand {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+      color: #fff;
+      user-select: none;
+      pointer-events: none;
+      animation: st-brand-in 650ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+
+    @keyframes st-brand-in {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .st-splash-mark-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .st-splash-icon {
+      width: clamp(64px, 14vw, 88px);
+      height: clamp(64px, 14vw, 88px);
+      flex-shrink: 0;
+    }
+
+    .st-splash-title {
+      font-weight: 800;
+      font-size: clamp(28px, 6.5vw, 40px);
+      letter-spacing: -0.5px;
+      line-height: 1;
+    }
+
+    .st-splash-tagline {
+      margin: 0;
+      max-width: 300px;
+      text-align: center;
+      font-size: 15px;
+      font-weight: 500;
+      line-height: 1.4;
+      color: rgba(255, 255, 255, 0.75);
+    }
+
+    .st-splash-progress {
+      position: relative;
+      z-index: 1;
+      margin-top: 36px;
+      width: 132px;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 99px;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    .st-splash-progress-bar {
+      width: 40%;
+      height: 100%;
+      border-radius: 99px;
+      background: rgba(255, 255, 255, 0.7);
+      animation: st-splash-indeterminate 1.15s ease-in-out infinite;
+    }
+
+    @keyframes st-splash-indeterminate {
+      0% { transform: translateX(-120%); }
+      100% { transform: translateX(320%); }
+    }
+
+    .st-splash-credit {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: max(20px, env(safe-area-inset-bottom, 20px));
+      z-index: 1;
+      text-align: center;
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      color: rgba(255, 255, 255, 0.45);
+      user-select: none;
+      pointer-events: none;
+    }
+
+  </style>
 
   <script>
     (function () {
@@ -42,122 +298,191 @@
       var configured = meta && meta.getAttribute('content');
       if (configured) {
         window.stApiBaseUrl = configured;
-        return;
+      } else {
+        var loc = window.location;
+        var host = loc.hostname;
+        if (host === 'localhost' || host === '127.0.0.1') {
+          window.stApiBaseUrl = (loc.protocol || 'http:') + '//' + host + ':8000';
+        } else {
+          window.stApiBaseUrl = loc.origin;
+        }
       }
-      var loc = window.location;
-      var host = loc.hostname;
-      if (host === 'localhost' || host === '127.0.0.1') {
-        var proto = loc.protocol || 'http:';
-        window.stApiBaseUrl = proto + '//' + host + ':8000';
+
+      function isStandalone() {
+        try {
+          if (window.matchMedia('(display-mode: standalone)').matches) return true;
+          if (window.matchMedia('(display-mode: fullscreen)').matches) return true;
+          if (window.matchMedia('(display-mode: minimal-ui)').matches) return true;
+          if (window.navigator.standalone === true) return true;
+        } catch (e) {}
+        return false;
       }
+
+      function measureSafeArea() {
+        var insets = { top: 0, right: 0, bottom: 0, left: 0 };
+        try {
+          var probe = document.createElement('div');
+          probe.style.cssText =
+            'position:fixed;top:0;left:0;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);visibility:hidden;pointer-events:none;';
+          document.body.appendChild(probe);
+          var cs = getComputedStyle(probe);
+          insets.top = parseFloat(cs.paddingTop) || 0;
+          insets.right = parseFloat(cs.paddingRight) || 0;
+          insets.bottom = parseFloat(cs.paddingBottom) || 0;
+          insets.left = parseFloat(cs.paddingLeft) || 0;
+          document.body.removeChild(probe);
+        } catch (e) {}
+        window.stSafeInsets = insets;
+      }
+
+      function preloadMaterialFont() {
+        var urls = ['fonts/MaterialIcons-Regular.otf', 'assets/fonts/MaterialIcons-Regular.otf'];
+        urls.forEach(function (url) {
+          try {
+            var f = new FontFace('MaterialIcons', 'url(' + url + ')', { display: 'swap' });
+            f.load().then(function (loaded) { document.fonts.add(loaded); }).catch(function () {});
+          } catch (e) {}
+        });
+      }
+
+      function setAppHeight() {
+        // Toujours innerHeight (pas visualViewport) — sinon décalage hit-test PWA iOS.
+        var h = window.innerHeight || document.documentElement.clientHeight;
+        document.documentElement.style.setProperty('--st-app-height', Math.round(h) + 'px');
+      }
+
+      window.stPwaStandalone = isStandalone();
+
+      if (window.stPwaStandalone) {
+        document.documentElement.classList.add('pwa-standalone');
+      }
+      window.stSafeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
+
+      var buildMeta = document.querySelector('meta[name="st-build"]');
+      var buildId = buildMeta ? (buildMeta.getAttribute('content') || '') : '';
+      if (buildId) {
+        console.info('[SombaTeka] build', buildId);
+        try {
+          var prev = localStorage.getItem('st-build');
+          if (prev && prev !== buildId) {
+            // Nouveau build → purge caches PWA pour éviter UI obsolète (profil blanc, etc.)
+            if (window.caches && caches.keys) {
+              caches.keys().then(function (keys) {
+                keys.forEach(function (k) { caches.delete(k); });
+              });
+            }
+            if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+              navigator.serviceWorker.getRegistrations().then(function (regs) {
+                regs.forEach(function (r) { r.unregister(); });
+              });
+            }
+          }
+          localStorage.setItem('st-build', buildId);
+        } catch (e) {}
+      }
+
+      document.addEventListener('DOMContentLoaded', function () {
+        measureSafeArea();
+        setAppHeight();
+        preloadMaterialFont();
+      });
+
+      window.addEventListener('load', function () {
+        measureSafeArea();
+        setAppHeight();
+        preloadMaterialFont();
+        // Cache assets Flutter (JS/WASM/fonts) — pas l'API.
+        if ('serviceWorker' in navigator) {
+          var swUrl = '/flutter_service_worker.js' + (buildId ? ('?v=' + encodeURIComponent(buildId)) : '');
+          navigator.serviceWorker.register(swUrl).catch(function (e) {
+            console.warn('[SombaTeka] SW register skipped:', e);
+          });
+        }
+      });
+
+      window.addEventListener('resize', function () {
+        measureSafeArea();
+        setAppHeight();
+      });
+      window.addEventListener('orientationchange', function () {
+        setTimeout(function () { measureSafeArea(); setAppHeight(); }, 150);
+      });
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', function () {
+          measureSafeArea();
+          setAppHeight();
+        });
+      }
+
+      function hideStSplash() {
+        var splash = document.getElementById('st-splash');
+        if (!splash) return;
+        if (splash.dataset.done === '1') {
+          splash.style.pointerEvents = 'none';
+          splash.style.display = 'none';
+          return;
+        }
+        splash.dataset.done = '1';
+        // Libère les touches tout de suite, fade court, puis retire le nœud.
+        // Évite l'écran bleu vide si Flutter n'a pas encore peint l'UI.
+        splash.style.pointerEvents = 'none';
+        splash.classList.add('st-splash-hide');
+        splash.style.transition = 'opacity 180ms ease-out';
+        splash.style.opacity = '0';
+        setTimeout(function () {
+          try {
+            splash.style.display = 'none';
+            if (splash.parentNode) splash.parentNode.removeChild(splash);
+          } catch (e) {}
+        }, 200);
+      }
+
+      window.hideStSplash = hideStSplash;
+
+      // Ne PAS masquer au premier frame Flutter — l'UI peut encore être vide (bleu).
+      // Dart appelle hideStSplash quand Intro/Main/Detail est vraiment prêt.
+      window.addEventListener('flutter-first-frame', function () {
+        // no-op: splash reste jusqu'à stHideHtmlSplash() côté Flutter
+      });
+
+      // Secours long uniquement — jamais bloquer l'utilisateur.
+      setTimeout(hideStSplash, 7000);
     })();
-  </script>
-  
-  
-  <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport">
-  
-  
-  
-  
-  
-  
-  <style id="splash-screen-style">
-    html {
-      height: 100%
-    }
-
-    body {
-      margin: 0;
-      min-height: 100%;
-      background-color: #0D1B4B;
-          background-size: 100% 100%;
-    }
-
-    .center {
-      margin: 0;
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      -ms-transform: translate(-50%, -50%);
-      transform: translate(-50%, -50%);
-    }
-
-    .contain {
-      display:block;
-      width:100%; height:100%;
-      object-fit: contain;
-    }
-
-    .stretch {
-      display:block;
-      width:100%; height:100%;
-    }
-
-    .cover {
-      display:block;
-      width:100%; height:100%;
-      object-fit: cover;
-    }
-
-    .bottom {
-      position: absolute;
-      bottom: 0;
-      left: 50%;
-      -ms-transform: translate(-50%, 0);
-      transform: translate(-50%, 0);
-    }
-
-    .bottomLeft {
-      position: absolute;
-      bottom: 0;
-      left: 0;
-    }
-
-    .bottomRight {
-      position: absolute;
-      bottom: 0;
-      right: 0;
-    }
-  </style>
-  <script id="splash-screen-script">
-    function removeSplashFromWeb() {
-      document.getElementById("splash")?.remove();
-      document.getElementById("splash-branding")?.remove();
-      document.body.style.background = "transparent";
-    }
   </script>
 </head>
-<body style="margin:0;background:#0D1B4B;">
-  <picture id="splash">
-      <source srcset="splash/img/light-1x.png 1x, splash/img/light-2x.png 2x, splash/img/light-3x.png 3x, splash/img/light-4x.png 4x" media="(prefers-color-scheme: light)">
-      <source srcset="splash/img/dark-1x.png 1x, splash/img/dark-2x.png 2x, splash/img/dark-3x.png 3x, splash/img/dark-4x.png 4x" media="(prefers-color-scheme: dark)">
-      <img class="center" aria-hidden="true" src="splash/img/light-1x.png" alt="">
-  </picture>
-  
-  
-  
-  
-  <div id="st-loading" style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:system-ui,-apple-system,sans-serif;color:#fff;z-index:9999;pointer-events:none;">
-    <div style="width:48px;height:48px;border:3px solid rgba(255,255,255,.25);border-top-color:#FFD700;border-radius:50%;animation:st-spin 1s linear infinite;"></div>
-    <p style="margin:20px 16px 0;font-size:16px;font-weight:600;">Chargement de SombaTeka…</p>
-    <p style="margin:8px 16px 0;font-size:13px;opacity:.75;text-align:center;max-width:320px;">Premier chargement : 30–60 s sur iPhone.</p>
+<body>
+  <div id="st-splash" aria-hidden="true">
+    <div class="st-splash-orb st-splash-orb-a" aria-hidden="true"></div>
+    <div class="st-splash-orb st-splash-orb-b" aria-hidden="true"></div>
+    <div class="st-splash-orb st-splash-orb-c" aria-hidden="true"></div>
+    <div class="st-splash-brand">
+      <div class="st-splash-mark-row">
+        <svg class="st-splash-icon" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <defs>
+            <radialGradient id="st-bag-glow" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stop-color="rgba(251,191,36,0.28)"/>
+              <stop offset="100%" stop-color="rgba(251,191,36,0)"/>
+            </radialGradient>
+            <filter id="st-star-glow" x="-40%" y="-40%" width="180%" height="180%">
+              <feGaussianBlur stdDeviation="3"/>
+            </filter>
+          </defs>
+          <circle cx="48" cy="48" r="44" fill="url(#st-bag-glow)"/>
+          <path d="M30.72 21.12 C30.72 4.8 65.28 4.8 65.28 21.12" stroke="#fff" stroke-width="5.28" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M30.72 21.12 L15.36 26.88" stroke="#fff" stroke-width="5.28" stroke-linecap="round"/>
+          <path d="M65.28 21.12 L80.64 26.88" stroke="#fff" stroke-width="5.28" stroke-linecap="round"/>
+          <rect x="15.36" y="26.88" width="65.28" height="59.52" rx="10.56" stroke="#fff" stroke-width="5.28"/>
+          <path d="M48.00 30.10 L53.71 46.86 L71.42 47.11 L57.24 57.72 L62.47 74.64 L48.00 64.44 L33.53 74.64 L38.76 57.72 L24.58 47.11 L42.29 46.86 Z" fill="#FBBF24" opacity="0.45" filter="url(#st-star-glow)"/>
+          <path d="M48.00 36.48 L52.23 48.90 L65.35 49.08 L54.85 56.94 L58.72 69.48 L48.00 61.92 L37.28 69.48 L41.15 56.94 L30.65 49.08 L43.77 48.90 Z" fill="#FBBF24"/>
+        </svg>
+        <span class="st-splash-title">SombaTeka</span>
+      </div>
+      <p class="st-splash-tagline">La marketplace premium de la RDC</p>
+    </div>
+    <div class="st-splash-progress" aria-hidden="true">
+      <div class="st-splash-progress-bar"></div>
+    </div>
+    <span class="st-splash-credit">devalpha1</span>
   </div>
-  <style>@keyframes st-spin{to{transform:rotate(360deg)}}</style>
-  <script>
-    (function () {
-      function hideLoading() {
-        var el = document.getElementById('st-loading');
-        if (el) el.style.display = 'none';
-      }
-      window.addEventListener('flutter-first-frame', hideLoading);
-      // Ne pas afficher les erreurs internes Flutter/debug (removeChild, WebSocket…).
-      window.addEventListener('error', function (e) {
-        var m = (e && e.message) || '';
-        if (/removeChild|parentNode|loader|WebSocket|DevHandler/i.test(m)) return;
-      }, true);
-    })();
-  </script>
   <script src="flutter_bootstrap.js" async=""></script>
-
-
 </body></html>

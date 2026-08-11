@@ -417,7 +417,9 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
 
     if (desktopWeb) {
       return Scaffold(
-        backgroundColor: PremiumTheme.surface,
+        backgroundColor: _currentIndex == 4
+            ? const Color(0xFF0D1B4B)
+            : PremiumTheme.surface,
         resizeToAvoidBottomInset: true,
         body: Center(
           child: ConstrainedBox(
@@ -440,7 +442,9 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
     }
 
     return Scaffold(
-      backgroundColor: PremiumTheme.surface,
+      backgroundColor: _currentIndex == 4
+          ? const Color(0xFF0D1B4B)
+          : PremiumTheme.surface,
       resizeToAvoidBottomInset: true,
       body: pageContent,
       bottomNavigationBar: CustomBottomBar(
