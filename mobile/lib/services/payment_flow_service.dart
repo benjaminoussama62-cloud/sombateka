@@ -48,6 +48,11 @@ class PaymentFlowService {
     int quantity = 1,
     String paymentChannel = 'mobile_money',
   }) async {
+    if (!AppConfig.paymentsEnabled) {
+      throw Exception(
+        'Paiement in-app bientôt disponible. Contactez le vendeur pour convenir du paiement.',
+      );
+    }
     final order = await _orders.createOrder(
       listingId,
       variantSize: variantSize,

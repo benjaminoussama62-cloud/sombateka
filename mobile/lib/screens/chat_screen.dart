@@ -10,7 +10,13 @@ import '../utils/api_errors.dart';
 import '../utils/constants.dart';
 import '../utils/date_format.dart';
 import '../widgets/conversation_actions.dart';
+import '../widgets/st_page_header.dart';
+import '../widgets/st_safe_area.dart';
+import '../widgets/account_verification_badge.dart';
+import '../widgets/helpdesk_bot_panel.dart';
 import '../widgets/review_sheet.dart';
+import '../content/helpdesk_bot_content.dart';
+import '../utils/friendly_error.dart';
 
 /// Discussion liée à une annonce ou vendeur officiel.
 class ChatScreen extends StatefulWidget {
@@ -23,6 +29,8 @@ class ChatScreen extends StatefulWidget {
     this.listingImageUrl,
     this.isOfficialPeer = false,
     this.isTeamPeer = false,
+    this.peerAccountVerified = false,
+    this.peerEmailVerified = false,
     this.allowHelpdeskCompose = false,
     this.initialDraft,
     this.autoSendMessage,
@@ -35,6 +43,8 @@ class ChatScreen extends StatefulWidget {
   final String? listingImageUrl;
   final bool isOfficialPeer;
   final bool isTeamPeer;
+  final bool peerAccountVerified;
+  final bool peerEmailVerified;
   /// Écriture centre d'aide : uniquement depuis Paramètres.
   final bool allowHelpdeskCompose;
   final String? initialDraft;
@@ -52,11 +62,17 @@ class _ChatScreenState extends State<ChatScreen> {
   List<Map<String, dynamic>> _messages = [];
   bool _loading = true;
   bool _sending = false;
+  bool _helpdeskFreeText = false;
+  bool _ticketAckShown = false;
   Map<String, dynamic>? _reviewEligibility;
 
   bool get _isHelpdesk => widget.isTeamPeer;
 
+  bool get _helpdeskComposeMode => _isHelpdesk && widget.allowHelpdeskCompose;
+
   bool get _helpdeskReadOnly => _isHelpdesk && !widget.allowHelpdeskCompose;
+
+  bool get _showHelpdeskBot => _helpdeskComposeMode && !_helpdeskFreeText && !_loading;
 
   bool get _isSellerInbox {
     final me = _data.currentUser;
@@ -74,7 +90,9 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    if (widget.initialDraft != null && widget.initialDraft!.isNotEmpty) {
+    if (!_helpdeskComposeMode &&
+        widget.initialDraft != null &&
+        widget.initialDraft!.isNotEmpty) {
       _input.text = widget.initialDraft!;
     }
     _initChat();
@@ -89,8 +107,14 @@ class _ChatScreenState extends State<ChatScreen> {
         isTeamPeer: widget.isTeamPeer,
       );
       _reloadMessages();
+      if (_helpdeskComposeMode) {
+        final userWrote = _messages.any((m) => m['isMe'] == true);
+        if (userWrote || _messages.isNotEmpty) _helpdeskFreeText = true;
+      }
       await _checkReviewStatus();
-      if (widget.autoSendMessage != null && widget.autoSendMessage!.trim().isNotEmpty) {
+      if (!_helpdeskComposeMode &&
+          widget.autoSendMessage != null &&
+          widget.autoSendMessage!.trim().isNotEmpty) {
         await _send(widget.autoSendMessage!.trim());
       }
     } catch (_) {}
@@ -183,6 +207,17 @@ class _ChatScreenState extends State<ChatScreen> {
         setState(() {
           _reloadMessages();
           _sending = false;
+          if (_helpdeskComposeMode && !_ticketAckShown) {
+            _ticketAckShown = true;
+            _helpdeskFreeText = true;
+            _messages.add({
+              'id': 'bot_ack_${DateTime.now().millisecondsSinceEpoch}',
+              'message': HelpdeskBotContent.afterTicketMessage,
+              'isMe': false,
+              'isTeamMessage': true,
+              'timestamp': DateTime.now(),
+            });
+          }
         });
         _scrollToBottom();
       }
@@ -303,37 +338,51 @@ class _ChatScreenState extends State<ChatScreen> {
           _header(),
           if (!_isHelpdesk && widget.listingTitle != null && widget.listingTitle!.isNotEmpty) _listingBanner(),
           if (_isHelpdesk) _helpdeskInfoBanner(),
-          Expanded(child: _loading ? const Center(child: CircularProgressIndicator(color: PremiumTheme.blue)) : _messageList()),
-          if (!_loading && _messages.isEmpty && !_helpdeskReadOnly) _quickReplyBar(),
-          if (_helpdeskReadOnly) _helpdeskReadOnlyBar() else ChatInput(
-            controller: _input,
-            onSend: () => _send(),
-            isLoading: _sending,
-            hintText: _isHelpdesk ? 'Votre message au centre d\'aide…' : 'Message…',
-          ),
+          if (_showHelpdeskBot)
+            Expanded(
+              child: HelpdeskBotPanel(
+                onEscalate: () => setState(() => _helpdeskFreeText = true),
+              ),
+            )
+          else
+            Expanded(child: _loading ? const Center(child: CircularProgressIndicator(color: PremiumTheme.blue)) : _messageList()),
+          if (!_loading && _messages.isEmpty && !_helpdeskReadOnly && !_isHelpdesk) _quickReplyBar(),
+          if (_helpdeskReadOnly)
+            _helpdeskReadOnlyBar()
+          else if (_helpdeskComposeMode && !_helpdeskFreeText)
+            const SizedBox.shrink()
+          else
+            ChatInput(
+              controller: _input,
+              onSend: () => _send(),
+              isLoading: _sending,
+              hintText: _isHelpdesk ? 'Décrivez votre problème en détail…' : 'Message…',
+            ),
         ],
       ),
     );
   }
 
   Widget _header() {
-    return Container(
-      decoration: PremiumTheme.heroGradient,
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(4, 4, 12, 12),
-          child: Row(
-            children: [
-              IconButton(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-              ),
+    return StPageHeader(
+      padding: const EdgeInsets.fromLTRB(4, 4, 12, 12),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: () => Navigator.pop(context),
+            icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+          ),
               CircleAvatar(
                 radius: 22,
                 backgroundColor: _isHelpdesk ? PremiumTheme.emerald.withValues(alpha: 0.25) : Colors.white.withValues(alpha: 0.2),
                 child: _isHelpdesk
-                    ? const Icon(Icons.support_agent_rounded, color: Colors.white, size: 24)
+                    ? Icon(
+                        _helpdeskComposeMode && _showHelpdeskBot
+                            ? Icons.smart_toy_rounded
+                            : Icons.support_agent_rounded,
+                        color: Colors.white,
+                        size: 24,
+                      )
                     : Text(
                         widget.peerName.isNotEmpty ? widget.peerName[0].toUpperCase() : '?',
                         style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
@@ -354,7 +403,9 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                     Text(
                       widget.isTeamPeer
-                          ? 'Centre d\'aide SombaTeka'
+                          ? (_helpdeskComposeMode && _showHelpdeskBot
+                              ? 'Assistant SombaTeka · choisissez un sujet'
+                              : 'Centre d\'aide SombaTeka')
                           : _isSellerInbox
                               ? 'Acheteur · ${widget.peerName}'
                               : (widget.isOfficialPeer
@@ -364,6 +415,14 @@ class _ChatScreenState extends State<ChatScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if (!widget.isTeamPeer && !widget.isOfficialPeer) ...[
+                      const SizedBox(height: 4),
+                      AccountVerificationBadge(
+                        verified: widget.peerAccountVerified || widget.peerEmailVerified,
+                        compact: true,
+                        lightOnDark: true,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -384,8 +443,6 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ],
           ),
-        ),
-      ),
     );
   }
 
@@ -412,8 +469,10 @@ class _ChatScreenState extends State<ChatScreen> {
                 Text('Centre d\'aide SombaTeka', style: PremiumTheme.h1.copyWith(fontSize: 13, color: PremiumTheme.blue)),
                 Text(
                   _helpdeskReadOnly
-                      ? 'Lecture seule ici — réponses officielles de l\'équipe.'
-                      : 'Assistance, modération et comptes pro.',
+                      ? 'Consultez les réponses de l\'équipe ci-dessus.'
+                      : (_showHelpdeskBot
+                          ? 'Réponses instantanées · équipe humaine si besoin'
+                          : 'Décrivez votre demande — réponse sous 24–48 h'),
                   style: PremiumTheme.label.copyWith(fontSize: 11),
                 ),
               ],
@@ -428,8 +487,7 @@ class _ChatScreenState extends State<ChatScreen> {
     return Material(
       color: Colors.white,
       elevation: 8,
-      child: SafeArea(
-        top: false,
+      child: StSafeBottom(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: Column(
@@ -600,7 +658,7 @@ class _ChatScreenState extends State<ChatScreen> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Suppression impossible: $e'), backgroundColor: AppColors.danger),
+            SnackBar(content: Text(friendlyError(e, fallback: 'Suppression impossible. Réessayez.')), backgroundColor: AppColors.danger),
           );
         }
       }

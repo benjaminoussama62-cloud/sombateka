@@ -1,48 +1,76 @@
-"""Génère l'icône SombaTeka 1024×1024 pour les stores."""
+"""Génère l'icône SombaTeka (sac plein + étoile centrée) pour les stores et le web.
+
+Rendu 4x puis downscale LANCZOS pour l'anti-aliasing.
+La marque tient dans la zone sûre adaptive icon (~66% centrée).
+"""
+import math
 from pathlib import Path
 
 from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "assets" / "icon" / "app_icon.png"
-OUT.parent.mkdir(parents=True, exist_ok=True)
+WEB_ICONS = ROOT / "web" / "icons"
+SITE_ASSETS = ROOT.parent / "website" / "assets"
 
 SIZE = 1024
+SS = 4  # supersampling
 BG = (13, 27, 75)  # #0D1B4B
 BAG = (255, 255, 255)
-STAR = (255, 215, 0)  # gold
-ACCENT = (37, 99, 235)  # primary blue
+STAR = (251, 191, 36)  # #FBBF24 gold
 
-img = Image.new("RGB", (SIZE, SIZE), BG)
-draw = ImageDraw.Draw(img)
+img = Image.new("RGB", (SIZE * SS, SIZE * SS), BG)
+mark = Image.new("RGBA", (SIZE * SS, SIZE * SS), (0, 0, 0, 0))
+d = ImageDraw.Draw(mark)
 
-# Sac shopping (forme simplifiée)
-cx, cy = SIZE // 2, SIZE // 2 + 40
-bag_w, bag_h = 420, 480
-left = cx - bag_w // 2
-top = cy - bag_h // 2
-draw.rounded_rectangle(
-    [left, top + 80, left + bag_w, top + bag_h],
-    radius=48,
-    fill=BAG,
-)
-# Anses
-draw.arc([left + 60, top - 20, left + bag_w - 60, top + 160], 200, 340, fill=BAG, width=36)
 
-# Étoile
-star_cx, star_cy = cx + 130, cy - 120
-r_outer, r_inner = 72, 32
+def pt(fx, fy):
+    return fx * SIZE * SS, fy * SIZE * SS
+
+
+def box(fx0, fy0, fx1, fy1):
+    return [pt(fx0, fy0)[0], pt(fx0, fy0)[1], pt(fx1, fy1)[0], pt(fx1, fy1)[1]]
+
+
+# Anse — demi-ellipse épaisse au-dessus du corps du sac
+d.arc(box(0.32, 0.16, 0.68, 0.56), 180, 360, fill=BAG, width=int(0.058 * SIZE * SS))
+
+# Corps du sac — rectangle arrondi plein, massif
+d.rounded_rectangle(box(0.19, 0.35, 0.81, 0.83), radius=int(0.12 * SIZE * SS), fill=BAG)
+
+# Étoile centrée dans le sac — grande (≈40% de la largeur du sac)
+scx, scy = pt(0.5, 0.575)
+r_out, r_in = 0.16 * SIZE * SS, 0.065 * SIZE * SS
 points = []
-import math
-
 for i in range(10):
-    angle = math.pi / 2 + i * math.pi / 5
-    r = r_outer if i % 2 == 0 else r_inner
-    points.append((star_cx + r * math.cos(angle), star_cy - r * math.sin(angle)))
-draw.polygon(points, fill=STAR)
+    angle = -math.pi / 2 + i * math.pi / 5
+    r = r_out if i % 2 == 0 else r_in
+    points.append((scx + r * math.cos(angle), scy + r * math.sin(angle)))
+d.polygon(points, fill=STAR)
 
-# Bande accent en bas
-draw.rectangle([0, SIZE - 120, SIZE, SIZE], fill=ACCENT)
+# Légère rotation — dynamisme comme le visuel promo
+mark = mark.rotate(6, resample=Image.BICUBIC, center=pt(0.5, 0.52))
+img.paste(mark, (0, 0), mark)
 
+img = img.resize((SIZE, SIZE), Image.LANCZOS)
+OUT.parent.mkdir(parents=True, exist_ok=True)
 img.save(OUT, "PNG", optimize=True)
 print(f"Icon saved: {OUT}")
+
+# Icônes PWA / web
+for name, size in {
+    "Icon-192.png": 192,
+    "Icon-512.png": 512,
+    "Icon-maskable-192.png": 192,
+    "Icon-maskable-512.png": 512,
+}.items():
+    p = WEB_ICONS / name
+    img.resize((size, size), Image.LANCZOS).save(p, "PNG", optimize=True)
+    print(f"Saved: {p}")
+
+# Favicons du site marketing
+SITE_ASSETS.mkdir(parents=True, exist_ok=True)
+for name, size in {"favicon-192.png": 192, "favicon-32.png": 32}.items():
+    p = SITE_ASSETS / name
+    img.resize((size, size), Image.LANCZOS).save(p, "PNG", optimize=True)
+    print(f"Saved: {p}")

@@ -48,8 +48,8 @@ class ListingsRepository {
           if (categoryId != null) 'category_id': categoryId,
           if (isOfficial == true) 'is_official': true,
           if (size != null && size.isNotEmpty) 'size': size,
-          if (minPrice != null && minPrice > 0) 'min_price': minPrice,
-          if (maxPrice != null && maxPrice < 10000000) 'max_price': maxPrice,
+          if (minPrice != null && minPrice > 0) 'min_price': minPrice.round(),
+          if (maxPrice != null && maxPrice < 10000000) 'max_price': maxPrice.round(),
           if (color != null && color.isNotEmpty) 'color': color,
           if (condition != null && condition.isNotEmpty) 'condition': condition,
           if (brand != null && brand.isNotEmpty) 'brand': brand,
@@ -192,6 +192,28 @@ class ListingsRepository {
     await _api.post('/listings/$listingId/republish', idempotent: true);
   }
 
+  /// Mise à jour partielle (stock / attributs / pause vitrine).
+  Future<Map<String, dynamic>> updateListing(
+    int listingId, {
+    String? title,
+    String? description,
+    int? priceCdf,
+    String? attributes,
+    String? status,
+  }) async {
+    final r = await _api.patch<Map<String, dynamic>>(
+      '/listings/$listingId',
+      data: {
+        if (title != null) 'title': title,
+        if (description != null) 'description': description,
+        if (priceCdf != null) 'price_cdf': priceCdf,
+        if (attributes != null) 'attributes': attributes,
+        if (status != null) 'status': status,
+      },
+    );
+    return Map<String, dynamic>.from(r.data ?? {});
+  }
+
   Future<List<Map<String, dynamic>>> fetchInquirers(int listingId) async {
     final r = await _api.get<Map<String, dynamic>>('/listings/$listingId/inquirers');
     final items = (r.data?['items'] as List?) ?? [];
@@ -308,12 +330,22 @@ class ListingsRepository {
       throw StateError('Impossible de lire l\'image — réessayez');
     }
     final form = FormData.fromMap({'file': part});
-    final r = await _api.dio.post<Map<String, dynamic>>('/listings/search-by-image', data: form);
+    final r = await _api.dio.post<Map<String, dynamic>>(
+      '/listings/search-by-image',
+      data: form,
+      options: Options(
+        sendTimeout: const Duration(seconds: 60),
+        receiveTimeout: const Duration(seconds: 60),
+        contentType: 'multipart/form-data',
+      ),
+    );
     final items = (r.data?['items'] as List?) ?? [];
     final mapped = items.map((e) {
       final m = _mapListing(Map<String, dynamic>.from(e as Map));
       final sim = (e as Map)['similarity'];
       if (sim != null) m['similarity'] = sim;
+      final tier = e['match_tier']?.toString();
+      if (tier != null && tier.isNotEmpty) m['matchTier'] = tier;
       return m;
     }).toList();
     mapped.sort((a, b) {
@@ -335,15 +367,7 @@ class ListingsRepository {
   Map<String, dynamic> _mapListing(Map<String, dynamic> raw, {bool detailed = false, bool includeStatus = false}) {
     final primary = raw['primary_image_url']?.toString();
     final img = (primary != null && primary.isNotEmpty) ? _api.absoluteUrl(primary) : '';
-    final images = detailed
-        ? ((raw['images'] as List?) ?? [])
-            .map((i) {
-              if (i is Map) return _api.absoluteUrl(i['url']?.toString());
-              return _api.absoluteUrl(i?.toString());
-            })
-            .where((u) => u.isNotEmpty)
-            .toList()
-        : (img.isNotEmpty ? [img] : <String>[]);
+    final images = _extractImageUrls(raw, detailed: detailed, primary: img);
 
     final province = RdcLocations.parseProvince(raw['attributes']);
     final commune = RdcLocations.parseCommune(raw['attributes']);
@@ -373,10 +397,14 @@ class ListingsRepository {
       'listingType': (raw['is_official'] == true) ? 'payment' : 'contact',
       'isOfficial': raw['is_official'] == true,
       'isVerified': raw['is_official'] == true,
-      'sellerRating': (raw['seller_rating'] as num?)?.toDouble() ?? 0.0,
       'seller_id': raw['seller_id']?.toString(),
       'sellerId': raw['seller_id']?.toString(),
-      'sellerName': raw['seller_name']?.toString() ?? 'Vendeur',
+      'sellerName': raw['seller_display_name']?.toString() ?? raw['seller_name']?.toString() ?? 'Vendeur',
+      'sellerAvatarUrl': raw['seller_avatar_url'] != null ? _api.absoluteUrl(raw['seller_avatar_url']?.toString()) : null,
+      'sellerLogoUrl': raw['seller_logo_url'] != null ? _api.absoluteUrl(raw['seller_logo_url']?.toString()) : null,
+      'sellerRating': (raw['seller_rating'] as num?)?.toDouble() ?? 0.0,
+      'sellerReviewCount': (raw['seller_review_count'] as num?)?.toInt() ?? 0,
+      'sellerProfilePublic': raw['seller_profile_public'] != false,
       'images': images,
       'imageUrl': images.isNotEmpty ? images.first : '',
       'createdAt': raw['created_at'],
@@ -404,5 +432,25 @@ class ListingsRepository {
     if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M CDF';
     if (n >= 1000) return '${(n / 1000).toStringAsFixed(0)}K CDF';
     return '$n CDF';
+  }
+
+  List<String> _extractImageUrls(Map<String, dynamic> raw, {required bool detailed, required String primary}) {
+    final fromList = (raw['image_urls'] as List?) ?? [];
+    if (fromList.isNotEmpty) {
+      return fromList
+          .map((u) => _api.absoluteUrl(u?.toString() ?? ''))
+          .where((u) => u.isNotEmpty)
+          .toList();
+    }
+    if (detailed) {
+      return ((raw['images'] as List?) ?? [])
+          .map((i) {
+            if (i is Map) return _api.absoluteUrl(i['url']?.toString());
+            return _api.absoluteUrl(i?.toString());
+          })
+          .where((u) => u.isNotEmpty)
+          .toList();
+    }
+    return primary.isNotEmpty ? [primary] : <String>[];
   }
 }

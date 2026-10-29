@@ -336,12 +336,7 @@ class ProfileScreenState extends State<ProfileScreen> {
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [PremiumTheme.navy, Color(0xFF1E3A8A), PremiumTheme.blue],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+      decoration: StGlowDecoration(
         borderRadius: PremiumTheme.radiusLg,
         boxShadow: PremiumTheme.softShadow,
       ),
@@ -811,8 +806,8 @@ class ProfileScreenState extends State<ProfileScreen> {
   Widget _buildLoginGate(BuildContext context) {
     return Scaffold(
       backgroundColor: PremiumTheme.homeHeaderColor,
-      body: ColoredBox(
-        color: PremiumTheme.homeHeaderColor,
+      body: DecoratedBox(
+        decoration: PremiumTheme.heroGradient,
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(28),

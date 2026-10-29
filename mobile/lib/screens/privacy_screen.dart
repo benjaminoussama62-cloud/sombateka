@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/data_service.dart';
 import '../theme/premium_theme.dart';
 import '../utils/app_feedback.dart';
+import '../widgets/premium_scaffold.dart';
 
 class PrivacyScreen extends StatefulWidget {
   const PrivacyScreen({super.key});
@@ -70,14 +71,17 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: PremiumTheme.surface,
-      appBar: AppBar(
-        title: const Text('Confidentialité'),
-        backgroundColor: Colors.white,
-        foregroundColor: PremiumTheme.textDark,
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: PremiumTheme.blue))
-          : ListView(
+      body: Column(
+        children: [
+          const PremiumPageHeader(
+            title: 'Confidentialité',
+            subtitle: 'Contrôlez qui voit quoi sur SombaTeka',
+            emoji: '🔒',
+          ),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator(color: PremiumTheme.blue))
+                : ListView(
               children: [
                 SwitchListTile(
                   title: const Text('Profil public'),
@@ -117,6 +121,9 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
     );
   }
 }

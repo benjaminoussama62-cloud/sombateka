@@ -105,11 +105,16 @@ class AppConstants {
   static const int maxImages = 5;
   static const int maxListingsOrdinary = 5;
   static const Duration animationDuration = Duration(milliseconds: 300);
-  static const Duration splashDuration = Duration(milliseconds: 2400);
+  /// Splash web — 0 ms (le HTML #st-splash couvre le branding jusqu'à paint UI).
+  static const Duration splashDurationWeb = Duration.zero;
+  /// Splash natif mobile.
+  static const Duration splashDuration = Duration(milliseconds: 160);
+  static const Duration splashDurationMobile = splashDuration;
 }
 
 class AppRoutes {
   static const String splash = '/';
+  static const String intro = '/intro';
   static const String welcome = '/welcome';
   static const String auth = '/auth';
   static const String otp = '/otp';
@@ -131,6 +136,7 @@ class AppRoutes {
   static const String businessHub = '/business-hub';
   static const String settings = '/settings';
   static const String payment = '/payment';
+  static const String publicProfile = '/public-profile';
   static const String chat = '/chat';
 }
 

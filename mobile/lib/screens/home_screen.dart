@@ -1,24 +1,25 @@
 // lib/screens/home_screen.dart
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../utils/constants.dart';
 import '../utils/app_theme.dart';
 import '../widgets/smart_home_header.dart';
+import '../widgets/st_icon.dart';
 import '../widgets/marketplace_product_card.dart';
 import 'detail_screen.dart';
-import '../components/category_chip.dart';
 import '../components/shimmer_effect.dart';
 import '../services/cart_ui_helper.dart';
 import '../services/data_service.dart';
 import '../services/app_services.dart';
 import '../theme/premium_theme.dart';
-import '../utils/rdc_locations.dart';
 import '../utils/responsive.dart';
-import '../services/recently_viewed_service.dart';
-import '../services/preferred_province_service.dart';
+import '../utils/image_search_helper.dart';
+import '../utils/marketplace_layout.dart';
 import '../services/onboarding_service.dart';
 import '../widgets/app_tour_overlay.dart';
-import '../widgets/province_picker_sheet.dart';
+import '../widgets/st_network_image.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, this.onOpenCart});
@@ -32,7 +33,6 @@ class HomeScreen extends StatefulWidget {
 class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Future<void> reloadListings() async {
     setState(() => _isLoading = true);
-    _recentlyViewed = await RecentlyViewedService.instance.load();
     await _loadData();
   }
 
@@ -45,82 +45,52 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     if (mounted) setState(() {});
   }
   late TabController _tabController;
-  late AnimationController _headerController;
-  late Animation<double> _headerAnimation;
   
   final DataService _dataService = DataService();
-  String _selectedCategory = 'Toutes';
-  String? _selectedProvince;
-  List<Map<String, dynamic>> _recentlyViewed = [];
   bool _isLoading = true;
   int _notifCount = 0;
+  bool _headerCollapsed = false;
   final ScrollController _scrollController = ScrollController();
-  bool _isHeaderVisible = true;
-  double _lastScrollPosition = 0;
+
+  void _updateHeaderCollapsed() {
+    // Scroll externe > 0 : la barre de recherche peut atteindre le haut
+    // (innerBoxIsScrolled ne suffit pas quand le feed interne est trop court).
+    final collapsed = _scrollController.hasClients && _scrollController.offset > 0.5;
+    if (collapsed != _headerCollapsed) {
+      setState(() => _headerCollapsed = collapsed);
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _headerController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _headerAnimation = Tween<double>(begin: 1, end: 0).animate(_headerController);
-    
-    _scrollController.addListener(_onScroll);
-    _initProvinceAndLoad();
-  }
-
-  Future<void> _initProvinceAndLoad() async {
-    final saved = await PreferredProvinceService.instance.load();
-    if (saved != null && mounted) {
-      setState(() => _selectedProvince = saved);
-    }
-    await _loadData();
-  }
-
-  Future<void> _selectProvince(String? province) async {
-    setState(() {
-      _selectedProvince = province;
-      _isLoading = true;
-    });
-    await PreferredProvinceService.instance.save(province);
-    await _dataService.refreshListings(province: _selectedProvince, mixPromoted: true);
-    if (mounted) setState(() => _isLoading = false);
-  }
-
-  Future<void> _openAllProvincesPicker() async {
-    final picked = await showProvincePickerSheet(
-      context,
-      selected: _selectedProvince,
-      includeAllOption: true,
-    );
-    if (!mounted || picked == null) return;
-    await _selectProvince(picked.isEmpty ? null : picked);
-  }
-
-  void _onScroll() {
-    final currentScroll = _scrollController.position.pixels;
-    if (currentScroll > _lastScrollPosition && currentScroll > 100 && _isHeaderVisible) {
-      setState(() => _isHeaderVisible = false);
-      _headerController.forward();
-    } else if (currentScroll < _lastScrollPosition && !_isHeaderVisible) {
-      setState(() => _isHeaderVisible = true);
-      _headerController.reverse();
-    }
-    _lastScrollPosition = currentScroll;
+    _scrollController.addListener(_updateHeaderCollapsed);
+    // Stale-first synchrone : 1er frame avec cache, pas de shimmer bleu vide.
+    _dataService.hydrateListingsFromCache();
+    _isLoading = _dataService.getHomeFeedListings().isEmpty;
+    _loadData();
   }
 
   Future<void> _loadData() async {
     try {
-      await _dataService.refreshHomeFeeds(province: _selectedProvince);
-      _recentlyViewed = await RecentlyViewedService.instance.load();
-      if (await AppServices.instance.auth.hasSession()) {
-        await _dataService.loadFavorites();
-        await _dataService.loadCart();
-        await _dataService.loadNotifications();
-        _notifCount = _dataService.unreadNotificationCount;
+      // Feed réseau tout de suite — session en parallèle (ne bloque pas l'UI).
+      final sessionFuture = AppServices.instance.auth.hasSession();
+      final feedFuture = _dataService.refreshHomeFeeds();
+      final session = await sessionFuture;
+      final jobs = <Future<void>>[feedFuture];
+      if (session) {
+        jobs.add(_dataService.refreshUser());
+      }
+      await Future.wait(jobs);
+      if (session) {
+        unawaited(Future.wait([
+          _dataService.loadFavorites(),
+          _dataService.loadCart(),
+          _dataService.loadNotifications(),
+        ]).then((_) {
+          if (mounted) setState(() => _notifCount = _dataService.unreadNotificationCount);
+        }));
       }
     } catch (_) {}
     if (mounted) {
@@ -132,458 +102,138 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   @override
-  void dispose() {
-    _tabController.dispose();
-    _headerController.dispose();
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final topInset = MediaQuery.viewPaddingOf(context).top;
     return Scaffold(
-      backgroundColor: AppColors.background,
-      body: CustomScrollView(
+      backgroundColor: PremiumTheme.surface,
+      body: NestedScrollView(
         controller: _scrollController,
-        slivers: [
-          SliverToBoxAdapter(
-            child: SmartHomeHeader(
-              expanded: _isHeaderVisible,
-              cartCount: _dataService.cartItems.length,
-              notificationCount: _notifCount,
-              onCartTap: widget.onOpenCart,
-              onSearchTap: () => Navigator.pushNamed(context, AppRoutes.search),
-              onNotificationTap: () async {
-                await Navigator.pushNamed(context, AppRoutes.notifications);
-                await _dataService.loadNotifications();
-                if (mounted) setState(() => _notifCount = _dataService.unreadNotificationCount);
-              },
-            ),
+        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+        headerSliverBuilder: (context, innerBoxIsScrolled) => [
+          ...HomeCollapsingHeader.slivers(
+            context: context,
+            innerBoxIsScrolled: innerBoxIsScrolled || _headerCollapsed,
+            topInset: topInset,
+            notificationCount: _notifCount,
+            onNotificationTap: () async {
+              await Navigator.pushNamed(context, AppRoutes.notifications);
+              await _dataService.loadNotifications();
+              if (mounted) setState(() => _notifCount = _dataService.unreadNotificationCount);
+            },
+            onSearchTap: () => Navigator.pushNamed(context, AppRoutes.search),
+            onImageSearchTap: () => _startImageSearch(context),
           ),
-          
-          // Barre d'onglets (Particulier / Professionnel)
-          SliverToBoxAdapter(
+          MarketplaceLayout.centeredSliver(
+            SliverToBoxAdapter(
             child: Container(
-              margin: const EdgeInsets.all(16),
+              margin: MarketplaceLayout.pagePadding(context).copyWith(top: 16, bottom: 16),
               decoration: BoxDecoration(
-                color: AppColors.surface,
+                color: Colors.white,
                 borderRadius: BorderRadius.circular(AppConstants.borderRadius),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.shadow,
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+                border: Border.all(color: PremiumTheme.navy.withValues(alpha: 0.06)),
               ),
               child: TabBar(
                 controller: _tabController,
-                labelColor: AppColors.primary,
-                unselectedLabelColor: AppColors.textSecondary,
+                labelColor: PremiumTheme.blue,
+                unselectedLabelColor: PremiumTheme.textMuted,
                 indicator: BoxDecoration(
                   borderRadius: BorderRadius.circular(AppConstants.borderRadius),
-                  color: AppColors.primary.withOpacity(0.1),
+                  color: PremiumTheme.blue.withValues(alpha: 0.1),
                 ),
                 indicatorSize: TabBarIndicatorSize.tab,
                 tabs: const [
                   Tab(
-                    icon: Icon(Icons.person_outline),
+                    icon: AppIcon(Icons.person_outline),
                     text: 'Particuliers',
                   ),
                   Tab(
-                    icon: Icon(Icons.store_outlined),
+                    icon: AppIcon(Icons.store_outlined),
                     text: 'Professionnels',
                   ),
                 ],
               ),
             ),
-          ),
-          
-          // Contenu selon l'onglet
-          SliverFillRemaining(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildParticularView(),
-                _buildProfessionalView(),
-              ],
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  List<Map<String, dynamic>> _filteredHomeListings() {
-    var items = _dataService.getHomeFeedListings();
-    if (_selectedCategory != 'Toutes') {
-      items = items.where((l) => (l['category']?.toString() ?? '') == _selectedCategory).toList();
-    }
-    if (_selectedProvince != null && _selectedProvince!.isNotEmpty) {
-      items = items.where((l) {
-        final p = l['province']?.toString() ?? RdcLocations.guessProvince(l);
-        return p == _selectedProvince;
-      }).toList();
-    }
-    return items;
-  }
-
-  static const _quickProvinces = [
-    'Toutes',
-    'Kinshasa',
-    'Haut-Katanga',
-    'Nord-Kivu',
-    'Sud-Kivu',
-    'Lualaba',
-    'Kongo Central',
-    'Kasaï-Oriental',
-    'Équateur',
-  ];
-
-  Widget _buildProvinceBar() {
-    final extraSelected = _selectedProvince != null &&
-        _selectedProvince!.isNotEmpty &&
-        !_quickProvinces.contains(_selectedProvince);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Par province',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-                ),
-              ),
-              if (_selectedProvince != null)
-                TextButton(
-                  onPressed: () => _selectProvince(null),
-                  style: TextButton.styleFrom(
-                    padding: EdgeInsets.zero,
-                    minimumSize: const Size(0, 28),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: const Text('Réinitialiser', style: TextStyle(fontSize: 11)),
-                ),
-            ],
-          ),
-        ),
-        SizedBox(
-          height: 38,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: _quickProvinces.length + 1 + (extraSelected ? 1 : 0),
-            separatorBuilder: (_, __) => const SizedBox(width: 8),
-            itemBuilder: (_, i) {
-              if (extraSelected && i == _quickProvinces.length) {
-                final p = _selectedProvince!;
-                return FilterChip(
-                  label: Text(p, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
-                  selected: true,
-                  onSelected: (_) => _openAllProvincesPicker(),
-                  selectedColor: AppColors.primary.withValues(alpha: 0.15),
-                  checkmarkColor: AppColors.primary,
-                );
-              }
-              if (i == _quickProvinces.length + (extraSelected ? 1 : 0)) {
-                return ActionChip(
-                  avatar: const Icon(Icons.map_outlined, size: 16, color: AppColors.primary),
-                  label: const Text('26 provinces', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
-                  onPressed: _openAllProvincesPicker,
-                  backgroundColor: const Color(0xFFF1F5F9),
-                  side: const BorderSide(color: Color(0xFFCBD5E1)),
-                );
-              }
-              final p = _quickProvinces[i];
-              final sel = (p == 'Toutes' && _selectedProvince == null) || _selectedProvince == p;
-              return FilterChip(
-                label: Text(p, style: TextStyle(fontSize: 11, fontWeight: sel ? FontWeight.w800 : FontWeight.w600, color: const Color(0xFF0F172A))),
-                selected: sel,
-                onSelected: (_) => _selectProvince(p == 'Toutes' ? null : p),
-                selectedColor: AppColors.primary.withValues(alpha: 0.15),
-                checkmarkColor: AppColors.primary,
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 8),
-      ],
-    );
-  }
-
-  Widget _buildRecentlyViewed() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-          child: Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Consultés récemment',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-                ),
-              ),
-              TextButton(
-                onPressed: () async {
-                  await RecentlyViewedService.instance.clear();
-                  if (mounted) setState(() => _recentlyViewed = []);
-                },
-                style: TextButton.styleFrom(
-                  padding: EdgeInsets.zero,
-                  minimumSize: const Size(0, 24),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                child: const Text('Effacer', style: TextStyle(fontSize: 11)),
-              ),
-            ],
-          ),
-        ),
-        SizedBox(
-          height: 118,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: _recentlyViewed.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
-            itemBuilder: (_, i) {
-              final item = _recentlyViewed[i];
-              return GestureDetector(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => DetailScreen(listing: item)),
-                  );
-                },
-                child: Container(
-                  width: 92,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(
-                        child: ClipRRect(
-                          borderRadius: const BorderRadius.vertical(top: Radius.circular(11)),
-                          child: (item['imageUrl']?.toString().isNotEmpty == true)
-                              ? Image.network(item['imageUrl'].toString(), fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.image_outlined))
-                              : const ColoredBox(color: Color(0xFFF1F5F9), child: Icon(Icons.image_outlined)),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(4),
-                        child: Text(
-                          item['title']?.toString() ?? '',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildHeader() {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            AppColors.primary,
-            AppColors.primaryLight,
-            AppColors.secondary.withOpacity(0.3),
+        body: TabBarView(
+          controller: _tabController,
+          children: [
+            _buildParticularScroll(),
+            _buildProfessionalScroll(),
           ],
         ),
       ),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Spacer(),
-              // Texte de bienvenue
-              Text(
-                'Bonjour 👋',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.white.withOpacity(0.8),
-                ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Découvrez la marketplace congolaise',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppColors.gold.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: AppColors.gold.withOpacity(0.5)),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.verified, size: 14, color: AppColors.gold),
-                        SizedBox(width: 4),
-                        Text(
-                          '100% RDC',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: AppColors.gold,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Row(
-                    children: [
-                      const Icon(Icons.people, size: 14, color: Colors.white70),
-                      const SizedBox(width: 4),
-                      Text(
-                        '+124k vendeurs',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.white.withOpacity(0.8),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              // Barre de recherche
-              GestureDetector(
-                onTap: () => Navigator.pushNamed(context, AppRoutes.search),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(AppConstants.borderRadius),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.search, color: AppColors.textSecondary, size: 22),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Rechercher un produit, une boutique...',
-                          style: TextStyle(color: AppColors.textSecondary),
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: AppColors.background,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          '🔍',
-                          style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-          ),
-        ),
-      ),
     );
   }
 
-  Widget _buildPromotedOfficialRow() {
-    final promoted = _dataService.getPromotedOfficialListings();
-    if (promoted.isEmpty) return const SizedBox.shrink();
+  @override
+  void dispose() {
+    _scrollController.removeListener(_updateHeaderCollapsed);
+    _tabController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(colors: [Color(0xFF6B21A5), Color(0xFFD946EF)]),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.verified_rounded, size: 14, color: Colors.white),
-                    SizedBox(width: 4),
-                    Text('Officiels promus', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white)),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Boutiques certifiées — visibilité garantie',
-                  style: TextStyle(fontSize: 10, color: AppColors.textSecondary.withValues(alpha: 0.9)),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
+  List<Map<String, dynamic>> _homeListings() => _dataService.getHomeFeedListings();
+
+  Future<void> _startImageSearch(BuildContext context) async {
+    final picked = await pickImageForSearch(context);
+    if (picked == null || !mounted) return;
+    await Navigator.pushNamed(
+      context,
+      AppRoutes.search,
+      arguments: {
+        'imageSearchBytes': picked.bytes,
+        'imageSearchFilename': picked.filename,
+      },
+    );
+  }
+
+  Widget _buildParticularScroll() {
+    if (_isLoading) {
+      return _buildShimmerScroll();
+    }
+
+    final listings = _homeListings();
+
+    if (listings.isEmpty) {
+      return CustomScrollView(
+        slivers: [
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: _buildEmptyCatalog(
+              icon: Icons.storefront_outlined,
+              title: 'Aucune annonce pour le moment',
+              subtitle: 'Soyez le premier à publier une annonce',
+            ),
           ),
-        ),
-        SizedBox(
-          height: 198,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: promoted.length.clamp(0, 16),
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
-            itemBuilder: (_, i) {
-              final listing = promoted[i];
-              return SizedBox(
-                width: 132,
-                child: MarketplaceProductCard(
+        ],
+      );
+    }
+
+    return CustomScrollView(
+      slivers: [
+        MarketplaceLayout.centeredSliver(
+        SliverPadding(
+          padding: MarketplaceLayout.pagePadding(context).copyWith(top: 16, bottom: 24),
+          sliver: SliverGrid(
+            gridDelegate: MarketplaceLayout.productGridDelegate(context),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final listing = listings[index];
+                return MarketplaceProductCard(
                   listing: listing,
-                  compact: true,
                   autoRotateImages: true,
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => DetailScreen(listing: listing)),
+                      PageRouteBuilder(
+                        pageBuilder: (_, __, ___) => DetailScreen(listing: listing),
+                        transitionsBuilder: (_, anim, __, child) =>
+                            FadeTransition(opacity: anim, child: child),
+                        transitionDuration: const Duration(milliseconds: 280),
+                      ),
                     );
                   },
                   onFavorite: () async {
@@ -593,211 +243,127 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   onAddToCart: listing['isOwnListing'] == true
                       ? null
                       : () async {
-                          await CartUiHelper.addListing(context, listing, onViewCart: widget.onOpenCart);
+                          await CartUiHelper.toggleListing(
+                            context,
+                            listing,
+                            onViewCart: widget.onOpenCart,
+                          );
                           if (mounted) setState(() {});
                         },
-                ),
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 8),
-      ],
-    );
-  }
-
-  Widget _buildParticularView() {
-    if (_isLoading) {
-      return _buildShimmerGrid();
-    }
-    
-    final listings = _filteredHomeListings();
-
-    if (listings.isEmpty) {
-      return _buildEmptyCatalog(
-        icon: Icons.storefront_outlined,
-        title: _selectedProvince != null ? 'Aucune annonce dans cette province' : 'Aucune annonce pour le moment',
-        subtitle: _selectedProvince != null
-            ? 'Essayez une autre province ou publiez la première annonce'
-            : 'Soyez le premier à publier une annonce réelle',
-      );
-    }
-
-    return Column(
-      children: [
-        _buildProvinceBar(),
-        if (_recentlyViewed.isNotEmpty) ...[
-          _buildRecentlyViewed(),
-          const SizedBox(height: 8),
-        ],
-        // Catégories horizontales
-        SizedBox(
-          height: 50,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: AppStrings.categories.length,
-            itemBuilder: (context, index) {
-              final category = AppStrings.categories[index];
-              return Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: CategoryChip(
-                  name: category,
-                  icon: Icons.category,
-                  color: AppColors.primary,
-                  isSelected: _selectedCategory == category,
-                  onTap: () {
-                    setState(() {
-                      _selectedCategory = category;
-                    });
-                  },
-                ),
-              );
-            },
-          ),
-        ),
-        
-        const SizedBox(height: 16),
-        
-        // Grille des produits
-        Expanded(
-          child: GridView.builder(
-            padding: const EdgeInsets.all(16),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: Responsive.productGridColumns(context),
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: Responsive.productGridAspectRatio(context),
+                );
+              },
+              childCount: listings.length,
             ),
-            itemCount: listings.length,
-            itemBuilder: (context, index) {
-              final listing = listings[index];
-              return MarketplaceProductCard(
-                listing: listing,
-                autoRotateImages: true,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    PageRouteBuilder(
-                      pageBuilder: (_, __, ___) => DetailScreen(listing: listing),
-                      transitionsBuilder: (_, anim, __, child) =>
-                          FadeTransition(opacity: anim, child: child),
-                      transitionDuration: const Duration(milliseconds: 280),
-                    ),
-                  );
-                },
-                onFavorite: () async {
-                  await _dataService.toggleFavorite(listing['id']?.toString() ?? '');
-                  if (mounted) setState(() {});
-                },
-                onAddToCart: listing['isOwnListing'] == true
-                    ? null
-                    : () async {
-                        await CartUiHelper.addListing(
-                          context,
-                          listing,
-                          onViewCart: widget.onOpenCart,
-                        );
-                        if (mounted) setState(() {});
-                      },
-              );
-            },
           ),
+        ),
         ),
       ],
     );
   }
 
-  Widget _buildProfessionalView() {
+  Widget _buildProfessionalScroll() {
     if (_isLoading) {
-      return _buildShimmerGrid();
+      return _buildShimmerScroll();
     }
 
     final publications = _dataService.getOfficialPublications();
     final professionals = _dataService.getProfessionalStores();
 
     if (publications.isEmpty && professionals.isEmpty) {
-      return _buildEmptyCatalog(
-        icon: Icons.verified_outlined,
-        title: 'Aucune boutique officielle',
-        subtitle: 'Les publications des comptes certifiés SombaTeka apparaîtront ici',
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Container(
-          margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [PremiumTheme.navy, Color(0xFF1E3A8A), PremiumTheme.blue],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: PremiumTheme.radiusLg,
-            boxShadow: PremiumTheme.softShadow,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.verified_rounded, size: 14, color: PremiumTheme.gold),
-                        SizedBox(width: 4),
-                        Text('SombaTeka Pro', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Text(
-                '${publications.length} publication${publications.length > 1 ? 's' : ''} officielle${publications.length > 1 ? 's' : ''}',
-                style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900),
-              ),
-              Text(
-                'Collections multi-produits des boutiques certifiées',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 11),
-              ),
-            ],
-          ),
-        ),
-        if (professionals.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 88,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: professionals.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 10),
-              itemBuilder: (_, i) => _buildProfessionalStoreChip(professionals[i]),
+      return CustomScrollView(
+        slivers: [
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: _buildEmptyCatalog(
+              icon: Icons.verified_outlined,
+              title: 'Aucune boutique officielle',
+              subtitle: 'Les publications des comptes certifiés SombaTeka apparaîtront ici',
             ),
           ),
         ],
-        const SizedBox(height: 8),
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            itemCount: publications.length + 1,
-            itemBuilder: (_, i) {
-              if (i == publications.length) {
-                return _buildOfficialProductsGrid();
-              }
-              return _buildOfficialPublicationCard(publications[i]);
-            },
+      );
+    }
+
+    return CustomScrollView(
+      slivers: [
+        MarketplaceLayout.centeredSliver(
+        SliverToBoxAdapter(
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            padding: const EdgeInsets.all(18),
+            decoration: StGlowDecoration(
+              borderRadius: PremiumTheme.radiusLg,
+              boxShadow: PremiumTheme.softShadow,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          AppIcon(Icons.verified_rounded, size: 14, color: PremiumTheme.gold),
+                          SizedBox(width: 4),
+                          Text('SombaTeka Pro', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  '${publications.length} publication${publications.length > 1 ? 's' : ''} officielle${publications.length > 1 ? 's' : ''}',
+                  style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900),
+                ),
+                Text(
+                  'Collections multi-produits des boutiques certifiées',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 11),
+                ),
+              ],
+            ),
           ),
+        ),
+        ),
+        if (professionals.isNotEmpty)
+          MarketplaceLayout.centeredSliver(
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: SizedBox(
+                height: 88,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: professionals.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 10),
+                  itemBuilder: (_, i) => _buildProfessionalStoreChip(professionals[i]),
+                ),
+              ),
+            ),
+          ),
+          ),
+        MarketplaceLayout.centeredSliver(
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, i) {
+                if (i == publications.length) {
+                  return _buildOfficialProductsGrid();
+                }
+                return _buildOfficialPublicationCard(publications[i]);
+              },
+              childCount: publications.length + 1,
+            ),
+          ),
+        ),
         ),
       ],
     );
@@ -816,12 +382,7 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: Responsive.productGridColumns(context),
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            childAspectRatio: Responsive.productGridAspectRatio(context),
-          ),
+          gridDelegate: MarketplaceLayout.productGridDelegate(context),
           itemCount: products.length,
           itemBuilder: (_, index) {
             final listing = products[index];
@@ -841,7 +402,7 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               onAddToCart: listing['isOwnListing'] == true
                   ? null
                   : () async {
-                      await CartUiHelper.addListing(context, listing, onViewCart: widget.onOpenCart);
+                      await CartUiHelper.toggleListing(context, listing, onViewCart: widget.onOpenCart);
                       if (mounted) setState(() {});
                     },
             );
@@ -879,7 +440,7 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          const Icon(Icons.storefront_rounded, size: 12, color: PremiumTheme.blue),
+                          const AppIcon(Icons.storefront_rounded, size: 12, color: PremiumTheme.blue),
                           const SizedBox(width: 4),
                           Expanded(
                             child: Text(
@@ -889,7 +450,7 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          const Icon(Icons.verified_rounded, size: 14, color: PremiumTheme.gold),
+                          const AppIcon(Icons.verified_rounded, size: 14, color: PremiumTheme.gold),
                         ],
                       ),
                     ],
@@ -934,17 +495,14 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(10),
                             child: (listing['imageUrl']?.toString().isNotEmpty == true)
-                                ? Image.network(
-                                    listing['imageUrl'].toString(),
+                                ? StNetworkImage(
+                                    url: listing['imageUrl'].toString(),
                                     fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => const ColoredBox(
-                                      color: Color(0xFFF1F5F9),
-                                      child: Icon(Icons.image_outlined, size: 28),
-                                    ),
+                                    errorIconSize: 28,
                                   )
                                 : const ColoredBox(
                                     color: Color(0xFFF1F5F9),
-                                    child: Icon(Icons.image_outlined, size: 28),
+                                    child: AppIcon(Icons.image_outlined, size: 28),
                                   ),
                           ),
                         ),
@@ -987,7 +545,7 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         children: [
           Row(
             children: [
-              const Icon(Icons.storefront_rounded, size: 16, color: AppColors.primary),
+              const AppIcon(Icons.storefront_rounded, size: 16, color: AppColors.primary),
               const SizedBox(width: 4),
               Expanded(
                 child: Text(
@@ -1038,7 +596,7 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   : null,
             ),
             child: store['imageUrl'] == null
-                ? Icon(Icons.store, size: 35, color: AppColors.primary)
+                ? AppIcon(Icons.store, size: 35, color: AppColors.primary)
                 : null,
           ),
           const SizedBox(width: 12),
@@ -1060,7 +618,7 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const Icon(Icons.verified, size: 16, color: AppColors.gold),
+                    const AppIcon(Icons.verified, size: 16, color: AppColors.gold),
                     const SizedBox(width: 4),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -1078,7 +636,7 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    Icon(Icons.star, size: 14, color: AppColors.gold),
+                    AppIcon(Icons.star, size: 14, color: AppColors.gold),
                     const SizedBox(width: 2),
                     Text(store['rating'].toString(), style: const TextStyle(fontSize: 12)),
                     const SizedBox(width: 8),
@@ -1090,7 +648,7 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    Icon(Icons.location_on, size: 12, color: AppColors.textSecondary),
+                    AppIcon(Icons.location_on, size: 12, color: AppColors.textSecondary),
                     const SizedBox(width: 2),
                     Text(
                       store['location'] ?? 'RDC',
@@ -1126,7 +684,7 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 64, color: AppColors.textSecondary.withValues(alpha: 0.4)),
+            AppIcon(icon, size: 64, color: AppColors.textSecondary.withValues(alpha: 0.4)),
             const SizedBox(height: 16),
             Text(title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
             const SizedBox(height: 8),
@@ -1137,17 +695,22 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildShimmerGrid() {
-    return GridView.builder(
-      padding: const EdgeInsets.all(16),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: Responsive.productGridColumns(context),
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-        childAspectRatio: Responsive.productGridAspectRatio(context),
-      ),
-      itemCount: 6,
-      itemBuilder: (context, index) => const ShimmerProductCard(),
+  Widget _buildShimmerScroll() {
+    return CustomScrollView(
+      slivers: [
+        MarketplaceLayout.centeredSliver(
+        SliverPadding(
+          padding: MarketplaceLayout.pagePadding(context),
+          sliver: SliverGrid(
+            gridDelegate: MarketplaceLayout.productGridDelegate(context),
+            delegate: SliverChildBuilderDelegate(
+              (_, __) => const ShimmerProductCard(),
+              childCount: 6,
+            ),
+          ),
+        ),
+        ),
+      ],
     );
   }
 
@@ -1171,11 +734,11 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         showSelectedLabels: true,
         showUnselectedLabels: true,
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home_rounded), label: 'Accueil'),
-          BottomNavigationBarItem(icon: Icon(Icons.search_rounded), label: 'Explorer'),
-          BottomNavigationBarItem(icon: Icon(Icons.add_circle_rounded), label: 'Vendre'),
-          BottomNavigationBarItem(icon: Icon(Icons.message_rounded), label: 'Messages'),
-          BottomNavigationBarItem(icon: Icon(Icons.person_rounded), label: 'Profil'),
+          BottomNavigationBarItem(icon: AppIcon(Icons.home_rounded), label: 'Accueil'),
+          BottomNavigationBarItem(icon: AppIcon(Icons.search_rounded), label: 'Explorer'),
+          BottomNavigationBarItem(icon: AppIcon(Icons.add_circle_rounded), label: 'Vendre'),
+          BottomNavigationBarItem(icon: AppIcon(Icons.message_rounded), label: 'Messages'),
+          BottomNavigationBarItem(icon: AppIcon(Icons.person_rounded), label: 'Profil'),
         ],
       ),
     );

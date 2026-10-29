@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/data_service.dart';
+import '../services/marketplace_ui.dart';
 import '../theme/premium_theme.dart';
+import '../widgets/st_icon.dart';
 import '../utils/constants.dart';
 import '../utils/listing_utils.dart';
 import '../utils/rdc_locations.dart';
@@ -24,8 +26,8 @@ class MarketplaceProductCard extends StatefulWidget {
 
   final Map<String, dynamic> listing;
   final VoidCallback onTap;
-  final VoidCallback? onFavorite;
-  final VoidCallback? onAddToCart;
+  final Future<void> Function()? onFavorite;
+  final Future<void> Function()? onAddToCart;
   final bool compact;
   /// Défilement auto des photos (accueil uniquement, ≥2 images, 5 s).
   final bool autoRotateImages;
@@ -37,33 +39,41 @@ class MarketplaceProductCard extends StatefulWidget {
 class _MarketplaceProductCardState extends State<MarketplaceProductCard>
     with SingleTickerProviderStateMixin {
   late bool _liked;
+  late bool _inCart;
   late AnimationController _pressCtrl;
   late Animation<double> _scale;
   Timer? _carouselTimer;
   PageController? _pageController;
   int _carouselIndex = 0;
+  bool _suppressImageTap = false;
+  bool _hovered = false;
 
   static const _carouselInterval = Duration(seconds: 5);
 
   @override
   void initState() {
     super.initState();
-    _liked = _normalized['isFavorite'] == true;
+    _liked = _isListingLiked();
+    _inCart = _isListingInCart();
     _pressCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 120), upperBound: 0.04);
     _scale = Tween<double>(begin: 1, end: 0.96).animate(CurvedAnimation(parent: _pressCtrl, curve: Curves.easeOut));
     _setupCarousel();
   }
 
   Map<String, dynamic> get _normalized {
-    final uid = DataService().currentUser?['id']?.toString();
-    return normalizeListing(widget.listing, currentUserId: uid);
+    final data = DataService();
+    final uid = data.currentUser?['id']?.toString();
+    return normalizeListing(
+      widget.listing,
+      favoriteIds: data.favoriteIds,
+      currentUserId: uid,
+    );
   }
 
   List<String> get _imageUrls {
     final raw = _normalized['images'];
-    if (raw is List) {
-      final urls = raw.map((e) => e?.toString() ?? '').where((u) => u.isNotEmpty).toList();
-      if (urls.length >= 2) return urls;
+    if (raw is List && raw.isNotEmpty) {
+      return raw.map((e) => e?.toString() ?? '').where((u) => u.isNotEmpty).toList();
     }
     final single = _normalized['imageUrl']?.toString() ?? '';
     return single.isNotEmpty ? [single] : <String>[];
@@ -78,7 +88,23 @@ class _MarketplaceProductCardState extends State<MarketplaceProductCard>
     _carouselIndex = 0;
     if (!_shouldCarousel) return;
     _pageController = PageController();
+    _restartCarouselTimer();
+  }
+
+  void _restartCarouselTimer() {
+    _carouselTimer?.cancel();
+    if (!_shouldCarousel) return;
     _carouselTimer = Timer.periodic(_carouselInterval, (_) => _advanceCarousel());
+  }
+
+  void _pauseCarouselForInteraction() => _carouselTimer?.cancel();
+
+  void _resumeCarouselAfterInteraction() {
+    _suppressImageTap = true;
+    Future.delayed(const Duration(milliseconds: 220), () {
+      if (mounted) _suppressImageTap = false;
+    });
+    _restartCarouselTimer();
   }
 
   void _advanceCarousel() {
@@ -93,10 +119,29 @@ class _MarketplaceProductCardState extends State<MarketplaceProductCard>
     );
   }
 
+  void _openListing() {
+    if (_suppressImageTap) return;
+    HapticFeedback.lightImpact();
+    widget.onTap();
+  }
+
+  bool _isListingLiked() {
+    final id = int.tryParse(_normalized['id']?.toString() ?? '');
+    if (id == null) return _normalized['isFavorite'] == true;
+    return DataService().isFavorite(id.toString());
+  }
+
+  bool _isListingInCart() {
+    final id = int.tryParse(_normalized['id']?.toString() ?? '');
+    if (id == null) return false;
+    return DataService().isInCart(id);
+  }
+
   @override
   void didUpdateWidget(covariant MarketplaceProductCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _liked = _normalized['isFavorite'] == true;
+    _liked = _isListingLiked();
+    _inCart = _isListingInCart();
     if (oldWidget.autoRotateImages != widget.autoRotateImages ||
         oldWidget.listing != widget.listing) {
       _setupCarousel();
@@ -116,9 +161,7 @@ class _MarketplaceProductCardState extends State<MarketplaceProductCard>
     final l = _normalized;
     final title = l['title']?.toString() ?? 'Sans titre';
     final price = l['price']?.toString() ?? 'Prix sur demande';
-    final location = l['location']?.toString() ?? '';
-    final province = l['province']?.toString() ?? RdcLocations.guessProvince(l);
-    final locationLabel = _locationLabel(province, location);
+    final locationLabel = _communeQuartierLabel(l);
     final isNew = _isNewListing(l);
     final promoted = l['promoted'] == true;
     final verified = l['isVerified'] == true;
@@ -128,40 +171,45 @@ class _MarketplaceProductCardState extends State<MarketplaceProductCard>
 
     return ScaleTransition(
       scale: _scale,
-      child: Material(
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: AnimatedScale(
+          scale: _hovered ? 1.02 : 1.0,
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOut,
+          child: Material(
         color: Colors.transparent,
-        child: InkWell(
-          onTap: () {
-            HapticFeedback.lightImpact();
-            widget.onTap();
-          },
-          onTapDown: (_) => _pressCtrl.forward(),
-          onTapUp: (_) => _pressCtrl.reverse(),
-          onTapCancel: () => _pressCtrl.reverse(),
-          borderRadius: PremiumTheme.radiusMd,
-          child: Ink(
-            decoration: BoxDecoration(
-              color: isOwn ? const Color(0xFFF0FDF4) : Colors.white,
-              borderRadius: PremiumTheme.radiusMd,
-              border: Border.all(color: isOwn ? PremiumTheme.emerald : const Color(0xFFE8ECF4), width: isOwn ? 2 : 1),
-              boxShadow: isOwn
-                  ? [BoxShadow(color: PremiumTheme.emerald.withValues(alpha: 0.12), blurRadius: 12, offset: const Offset(0, 4))]
-                  : PremiumTheme.softShadow,
-            ),
-            child: widget.compact
-                ? _compactBody(title, price, urls, verified, size, isOwn)
-                : _gridBody(title, price, urls, locationLabel, verified, size, isOwn, isNew, promoted),
+        child: Ink(
+          decoration: BoxDecoration(
+            color: isOwn ? const Color(0xFFF0FDF4) : Colors.white,
+            borderRadius: PremiumTheme.radiusMd,
+            border: Border.all(color: isOwn ? PremiumTheme.emerald : const Color(0xFFE8ECF4), width: isOwn ? 2 : 1),
+            boxShadow: isOwn
+                ? [BoxShadow(color: PremiumTheme.emerald.withValues(alpha: 0.12), blurRadius: 12, offset: const Offset(0, 4))]
+                : _hovered
+                    ? [BoxShadow(color: PremiumTheme.navy.withValues(alpha: 0.16), blurRadius: 20, offset: const Offset(0, 8))]
+                    : PremiumTheme.softShadow,
+          ),
+          child: widget.compact
+              ? _compactBody(title, price, urls, locationLabel, verified, size, isOwn)
+              : _gridBody(title, price, urls, locationLabel, verified, size, isOwn, isNew, promoted),
+        ),
           ),
         ),
       ),
     );
   }
 
-  String _locationLabel(String province, String location) {
-    if (province.isEmpty) return location;
-    if (location.isEmpty) return province;
-    if (location.contains(province)) return location;
-    return '$province · $location';
+  String _communeQuartierLabel(Map<String, dynamic> l) {
+    final commune = l['commune']?.toString().trim() ?? RdcLocations.parseCommune(l['attributes']) ?? '';
+    final quartier = l['quartier']?.toString().trim() ?? RdcLocations.parseQuartier(l['attributes']) ?? '';
+    if (commune.isNotEmpty && quartier.isNotEmpty) return '$commune · $quartier';
+    if (commune.isNotEmpty) return commune;
+    if (quartier.isNotEmpty) return quartier;
+    final city = l['city']?.toString().trim() ?? '';
+    if (city.isNotEmpty) return city;
+    return l['location']?.toString().trim() ?? '';
   }
 
   bool _isNewListing(Map<String, dynamic> l) {
@@ -192,70 +240,112 @@ class _MarketplaceProductCardState extends State<MarketplaceProductCard>
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
-          child: _imageStack(
-            imageUrls,
-            verified,
-            size: size,
-            isOwn:             isOwn,
-            showCart: !isOwn && widget.onAddToCart != null,
-            showFavorite: !isOwn,
-            fillHeight: true,
-            isNew: isNew,
-            promoted: promoted,
+          child: GestureDetector(
+            onTap: _openListing,
+            onTapDown: (_) => _pressCtrl.forward(),
+            onTapUp: (_) => _pressCtrl.reverse(),
+            onTapCancel: () => _pressCtrl.reverse(),
+            child: _imageStack(
+              imageUrls,
+              verified,
+              size: size,
+              isOwn: isOwn,
+              showCart: !isOwn && widget.onAddToCart != null,
+              showFavorite: !isOwn,
+              fillHeight: true,
+              isNew: isNew,
+              promoted: promoted,
+            ),
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(6, 5, 6, 6),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, height: 1.15, color: PremiumTheme.textDark),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                price,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: isOwn ? PremiumTheme.emerald : PremiumTheme.blue),
-              ),
-              if (location.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Text(
-                    location,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: PremiumTheme.label.copyWith(fontSize: 8),
-                  ),
+        InkWell(
+          onTap: _openListing,
+          borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(6, 5, 6, 6),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, height: 1.15, color: PremiumTheme.textDark),
                 ),
-            ],
+                const SizedBox(height: 2),
+                Text(
+                  price,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: isOwn ? PremiumTheme.emerald : PremiumTheme.blue),
+                ),
+                if (location.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Row(
+                      children: [
+                        AppIcon(Icons.location_on_outlined, size: 9, color: PremiumTheme.textMuted.withValues(alpha: 0.85)),
+                        const SizedBox(width: 2),
+                        Expanded(
+                          child: Text(
+                            location,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: PremiumTheme.label.copyWith(fontSize: 8, color: PremiumTheme.textMuted),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ],
     );
   }
 
-  Widget _compactBody(String title, String price, List<String> imageUrls, bool verified, String size, bool isOwn) {
+  Widget _compactBody(
+    String title,
+    String price,
+    List<String> imageUrls,
+    String location,
+    bool verified,
+    String size,
+    bool isOwn,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        _imageStack(imageUrls, verified, aspectRatio: 0.92, size: size, isOwn: isOwn, showCart: false, showFavorite: !isOwn),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, height: 1.1)),
-              const SizedBox(height: 2),
-              Text(price, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: isOwn ? PremiumTheme.emerald : PremiumTheme.blue)),
-            ],
+        GestureDetector(
+          onTap: _openListing,
+          child: _imageStack(imageUrls, verified, aspectRatio: 0.92, size: size, isOwn: isOwn, showCart: false, showFavorite: !isOwn),
+        ),
+        InkWell(
+          onTap: _openListing,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, height: 1.1)),
+                const SizedBox(height: 2),
+                Text(price, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: isOwn ? PremiumTheme.emerald : PremiumTheme.blue)),
+                if (location.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      location,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: PremiumTheme.label.copyWith(fontSize: 8),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ],
@@ -279,12 +369,19 @@ class _MarketplaceProductCardState extends State<MarketplaceProductCard>
 
     Widget image;
     if (carousel && _pageController != null) {
-      image = PageView.builder(
-        controller: _pageController,
-        physics: const NeverScrollableScrollPhysics(),
-        onPageChanged: (i) => setState(() => _carouselIndex = i),
-        itemCount: imageUrls.length,
-        itemBuilder: (_, i) => _networkImage(imageUrls[i], fillHeight: fillHeight),
+      image = NotificationListener<ScrollNotification>(
+        onNotification: (n) {
+          if (n is ScrollStartNotification) _pauseCarouselForInteraction();
+          if (n is ScrollEndNotification) _resumeCarouselAfterInteraction();
+          return false;
+        },
+        child: PageView.builder(
+          controller: _pageController,
+          physics: const PageScrollPhysics(),
+          onPageChanged: (i) => setState(() => _carouselIndex = i),
+          itemCount: imageUrls.length,
+          itemBuilder: (_, i) => _networkImage(imageUrls[i], fillHeight: fillHeight),
+        ),
       );
     } else {
       image = primary.isNotEmpty ? _networkImage(primary, fillHeight: fillHeight) : _noImage();
@@ -339,7 +436,7 @@ class _MarketplaceProductCardState extends State<MarketplaceProductCard>
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
               decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [PremiumTheme.emerald, Color(0xFF059669)]),
+                gradient: LinearGradient(colors: [PremiumTheme.emerald, const Color(0xFF059669)]),
                 borderRadius: BorderRadius.circular(6),
               ),
               child: const Text('MOI', style: TextStyle(fontSize: 7, fontWeight: FontWeight.w900, color: Colors.white)),
@@ -386,11 +483,21 @@ class _MarketplaceProductCardState extends State<MarketplaceProductCard>
               icon: _liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
               color: _liked ? AppColors.danger : Colors.white,
               bg: _liked ? Colors.white : Colors.black.withValues(alpha: 0.45),
-              onTap: () {
-                HapticFeedback.mediumImpact();
-                setState(() => _liked = !_liked);
-                widget.onFavorite?.call();
-              },
+              onTap: widget.onFavorite == null
+                  ? null
+                  : () async {
+                      HapticFeedback.mediumImpact();
+                      final prev = _liked;
+                      setState(() => _liked = !prev);
+                      try {
+                        await widget.onFavorite!.call();
+                      } catch (e) {
+                        if (mounted) {
+                          setState(() => _liked = prev);
+                          await MarketplaceUi.showActionError(context, e);
+                        }
+                      }
+                    },
             ),
           ),
         if (showCart)
@@ -398,10 +505,21 @@ class _MarketplaceProductCardState extends State<MarketplaceProductCard>
             bottom: 5,
             right: 5,
             child: _roundAction(
-              icon: Icons.add_shopping_cart_rounded,
+              icon: _inCart ? Icons.shopping_cart_rounded : Icons.add_shopping_cart_rounded,
               color: Colors.white,
-              bg: PremiumTheme.blue,
-              onTap: widget.onAddToCart,
+              bg: _inCart ? PremiumTheme.emerald : PremiumTheme.blue,
+              onTap: widget.onAddToCart == null
+                  ? null
+                  : () async {
+                      HapticFeedback.mediumImpact();
+                      final prev = _inCart;
+                      setState(() => _inCart = !prev);
+                      try {
+                        await widget.onAddToCart!.call();
+                      } catch (_) {
+                        if (mounted) setState(() => _inCart = prev);
+                      }
+                    },
             ),
           ),
       ],
@@ -417,7 +535,9 @@ class _MarketplaceProductCardState extends State<MarketplaceProductCard>
       fit: BoxFit.cover,
       width: fillHeight ? double.infinity : null,
       height: fillHeight ? double.infinity : null,
-      fadeInDuration: const Duration(milliseconds: 280),
+      fadeInDuration: Duration.zero,
+      fadeOutDuration: Duration.zero,
+      placeholderFadeInDuration: Duration.zero,
       placeholder: (_, __) => _shimmerPlaceholder(),
       errorWidget: (_, __, ___) => _noImage(),
     );
@@ -427,7 +547,7 @@ class _MarketplaceProductCardState extends State<MarketplaceProductCard>
 
   Widget _noImage() => Container(
         color: const Color(0xFFF1F5F9),
-        child: const Center(child: Icon(Icons.image_outlined, size: 32, color: PremiumTheme.textMuted)),
+        child: Center(child: AppIcon(Icons.image_outlined, size: 32, color: PremiumTheme.textMuted)),
       );
 
   Widget _roundAction({
@@ -443,7 +563,7 @@ class _MarketplaceProductCardState extends State<MarketplaceProductCard>
       child: InkWell(
         onTap: onTap,
         customBorder: const CircleBorder(),
-        child: Padding(padding: const EdgeInsets.all(6), child: Icon(icon, size: 15, color: color)),
+        child: Padding(padding: const EdgeInsets.all(6), child: AppIcon(icon, size: 15, color: color)),
       ),
     );
   }

@@ -28,6 +28,7 @@ from app.routers.support import router as support_router
 from app.routers.users import router as users_router
 from app.routers.webhooks import router as webhooks_router
 from app.routers.ws import router as ws_router
+from app.routers.seo import router as seo_router
 from app.settings import settings
 from app.startup import init_database
 
@@ -39,7 +40,16 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title=settings.app_name, lifespan=lifespan)
+    docs_url = None if settings.is_production else "/docs"
+    redoc_url = None if settings.is_production else "/redoc"
+    openapi_url = None if settings.is_production else "/openapi.json"
+    app = FastAPI(
+        title=settings.app_name,
+        lifespan=lifespan,
+        docs_url=docs_url,
+        redoc_url=redoc_url,
+        openapi_url=openapi_url,
+    )
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RedisRateLimitMiddleware)
 
@@ -55,16 +65,35 @@ def create_app() -> FastAPI:
     if settings.cors_origin_regex:
         cors_kwargs["allow_origin_regex"] = settings.cors_origin_regex
     elif not origins:
+        if settings.is_production:
+            raise RuntimeError("CORS_ORIGINS or CORS_ORIGIN_REGEX must be set in production")
         cors_kwargs["allow_origin_regex"] = (
             r"https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+"
             r"|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?"
         )
     app.add_middleware(CORSMiddleware, **cors_kwargs)
 
+    # DevAlpha Cyber Army — détection / honeypots / ban global (HQ)
+    try:
+        import sys
+        from pathlib import Path
+
+        _cyber_agents = Path(__file__).resolve().parents[3] / "DevAlpha-Cyber" / "agents" / "python"
+        # parents: app -> backend -> SombaTeka -> DevAlpha org
+        if _cyber_agents.is_dir():
+            sys.path.insert(0, str(_cyber_agents))
+            from devalpha_cyber import CyberArmyMiddleware
+
+            app.add_middleware(CyberArmyMiddleware)
+    except Exception as _cyber_err:  # noqa: BLE001
+        logging.getLogger(__name__).warning("cyber-army agent not loaded: %s", _cyber_err)
+
     @app.exception_handler(Exception)
     async def _unhandled_exception(_request: Request, exc: Exception) -> JSONResponse:
         """Évite les 500 sans corps JSON (le navigateur affiche alors une erreur CORS trompeuse)."""
-        return JSONResponse(status_code=500, content={"detail": str(exc)})
+        logging.getLogger(__name__).exception("Unhandled server error")
+        detail = str(exc) if settings.environment == "dev" else "Erreur interne du serveur"
+        return JSONResponse(status_code=500, content={"detail": detail})
 
     if settings.sentry_dsn:
         from app.sentry_init import init_sentry
@@ -89,6 +118,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_chat_router, prefix=settings.api_prefix)
     app.include_router(webhooks_router, prefix=settings.api_prefix)
     app.include_router(ws_router)
+    app.include_router(seo_router)  # /annonce/{id}, sitemaps (hors /api)
     mount_admin_panel(app)
 
     uploads_dir = Path(__file__).resolve().parent.parent / "uploads"
@@ -629,7 +659,7 @@ def create_app() -> FastAPI:
                 window.sendMessage = sendMessage;
 
                 window.simulateImageSearch = function() {
-                    showAlert("Analyse de l'image (IA style Wildberries)...", "success");
+                    showAlert("Analyse de l'image en cours…", "success");
                     setTimeout(() => {
                         showAlert("Résultats trouvés !", "success");
                         renderFeed();
@@ -946,22 +976,39 @@ def create_app() -> FastAPI:
     @app.get("/healthz")
     @app.get("/health")
     def healthz() -> dict:
+        from sqlalchemy import text
+
+        from app.db import engine
         from app.services.redis_client import get_redis
 
-        redis_ok = False
+        db_ok = False
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+                db_ok = True
+        except Exception:
+            db_ok = False
+
+        redis_ok = None
         r = get_redis()
         if r:
             try:
-                redis_ok = r.ping()
+                redis_ok = bool(r.ping())
             except Exception:
                 redis_ok = False
-        return {
-            "ok": True,
-            "redis": redis_ok,
-            "environment": settings.environment,
-            "sentry": bool(settings.sentry_dsn.strip()),
-            "email_provider": settings.email_provider,
-        }
+
+        payload: dict = {"ok": db_ok, "db": db_ok}
+        if redis_ok is not None:
+            payload["redis"] = redis_ok
+        if not settings.is_production:
+            payload.update(
+                {
+                    "environment": settings.environment,
+                    "sentry": bool(settings.sentry_dsn.strip()),
+                    "email_provider": settings.email_provider,
+                }
+            )
+        return payload
 
     return app
 

@@ -71,16 +71,27 @@ def send_email(
     return True
 
 
-def send_otp_email(email: str, code: str) -> bool:
-    subject = "SombaTeka — votre code de connexion"
+def send_otp_email(email: str, code: str, *, purpose: str = "login") -> bool:
+    subjects = {
+        "login": "SombaTeka — votre code de connexion",
+        "register": "SombaTeka — confirmez votre e-mail",
+        "reset_password": "SombaTeka — réinitialisation du mot de passe",
+    }
+    intros = {
+        "login": "Votre code de connexion SombaTeka :",
+        "register": "Pour confirmer votre inscription, entrez ce code :",
+        "reset_password": "Pour réinitialiser votre mot de passe, entrez ce code :",
+    }
+    subject = subjects.get(purpose, subjects["login"])
+    intro = intros.get(purpose, intros["login"])
     text = (
-        f"Votre code SombaTeka : {code}\n\n"
+        f"{intro} {code}\n\n"
         f"Valide 10 minutes. Ne le partagez avec personne.\n\n"
         f"— Équipe SombaTeka"
     )
     html = _html_wrapper(
         subject,
-        f"<p>Votre code de connexion :</p>"
+        f"<p>{intro}</p>"
         f'<p style="font-size:28px;font-weight:700;letter-spacing:4px;color:#2563eb">{code}</p>'
         f"<p>Valide <strong>10 minutes</strong>. Ne le partagez avec personne.</p>",
     )
@@ -176,6 +187,10 @@ def _send_resend(to: str, subject: str, text_body: str, html_body: str) -> bool:
             )
             r.raise_for_status()
         return True
+    except httpx.HTTPStatusError as exc:
+        body = exc.response.text[:500] if exc.response is not None else ""
+        logger.error("Resend email failed HTTP %s: %s", exc.response.status_code if exc.response else "?", body)
+        return False
     except Exception as exc:
         logger.exception("Resend email failed: %s", exc)
         return False

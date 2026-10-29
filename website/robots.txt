@@ -1,4 +1,21 @@
 User-agent: *
 Allow: /
+Disallow: /admin/
+Disallow: /api/
 
-Sitemap: https://sombateka.cd/sitemap.xml
+# Catalogue HTML crawlable (hors SPA)
+Allow: /annonce/
+Allow: /categorie/
+Allow: /ville/
+Allow: /catalogue
+Allow: /marketplace-rdc
+Allow: /kinshasa
+Allow: /about
+Allow: /feeds/google-merchant.xml
+Allow: /feeds/google-merchant.tsv
+
+Sitemap: https://sombatekaonline.com/sitemap-index.xml
+Sitemap: https://sombatekaonline.com/sitemap.xml
+Sitemap: https://sombatekaonline.com/sitemap-products.xml
+Sitemap: https://sombatekaonline.com/sitemap-categories.xml
+Sitemap: https://sombatekaonline.com/sitemap-cities.xml

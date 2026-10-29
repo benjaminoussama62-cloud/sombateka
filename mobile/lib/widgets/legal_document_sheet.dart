@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../config/app_config.dart';
 import '../content/legal_content.dart';
+import '../theme/premium_theme.dart';
 
 /// Affiche les CGU ou la politique de confidentialité (texte + lien web store).
 class LegalDocumentSheet extends StatelessWidget {
@@ -35,6 +36,17 @@ class LegalDocumentSheet extends StatelessWidget {
         builder: (_) => LegalDocumentSheet(
           title: LegalContent.privacyTitle,
           body: LegalContent.privacyBody,
+          webUrl: AppConfig.privacyUrl,
+        ),
+      );
+
+  static Future<void> showCookies(BuildContext context) => showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => LegalDocumentSheet(
+          title: LegalContent.cookiesTitle,
+          body: LegalContent.cookiesBody,
           webUrl: AppConfig.privacyUrl,
         ),
       );
@@ -77,7 +89,12 @@ class LegalDocumentSheet extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               title,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+              style: PremiumTheme.h1.copyWith(fontSize: 20, color: PremiumTheme.navy),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              LegalContent.lastUpdated,
+              style: PremiumTheme.body.copyWith(fontSize: 11, color: PremiumTheme.textMuted),
             ),
             if (webUrl != null && webUrl!.isNotEmpty) ...[
               const SizedBox(height: 8),
@@ -93,7 +110,7 @@ class LegalDocumentSheet extends StatelessWidget {
                 controller: scroll,
                 child: Text(
                   body.trim(),
-                  style: const TextStyle(fontSize: 14, height: 1.5, color: Color(0xFF374151)),
+                  style: PremiumTheme.body.copyWith(fontSize: 14, height: 1.55),
                 ),
               ),
             ),
@@ -101,8 +118,14 @@ class LegalDocumentSheet extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: PremiumTheme.blue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: PremiumTheme.radiusMd),
+                ),
                 onPressed: () => Navigator.pop(context),
-                child: const Text('Fermer'),
+                child: const Text('J\'ai lu et compris'),
               ),
             ),
           ],

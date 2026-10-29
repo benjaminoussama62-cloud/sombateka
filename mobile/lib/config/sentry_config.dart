@@ -23,6 +23,16 @@ class SentryConfig {
       return;
     }
 
+    // runApp ne doit JAMAIS dépendre de la complétion de l'init Sentry :
+    // si l'init pende (réseau, DNS), le premier frame serait bloqué à vie.
+    var started = false;
+    Future<void> start() async {
+      if (started) return;
+      started = true;
+      await bootstrap();
+      runApp(app);
+    }
+
     await SentryFlutter.init(
       (options) {
         options.dsn = dsn;
@@ -30,9 +40,12 @@ class SentryConfig {
         options.tracesSampleRate = kReleaseMode ? 0.2 : 1.0;
         options.sendDefaultPii = false;
       },
-      appRunner: () async {
-        await bootstrap();
-        runApp(app);
+      appRunner: start,
+    ).timeout(
+      const Duration(seconds: 5),
+      onTimeout: () async {
+        debugPrint('SentryConfig: init timed out — starting app without it');
+        await start();
       },
     );
   }

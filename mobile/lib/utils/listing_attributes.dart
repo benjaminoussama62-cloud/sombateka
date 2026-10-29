@@ -63,31 +63,74 @@ class ListingAttributes {
     'Bébé & Enfants',
   ];
 
-  static bool categoryNeedsSize(String? category) {
-    if (category == null || category.isEmpty) return false;
+  /// Annonces type Kufar (immobilier, véhicules, hôtels…).
+  static const marketplaceCategoryNames = [
+    'Immobilier — Vente',
+    'Immobilier — Location',
+    'Parcelles & Terrains',
+    'Hôtels & Hébergement',
+    'Véhicules — Voitures',
+    'Véhicules — Motos',
+    'Véhicules — Camions & Bus',
+    'Emploi & Services',
+    'Location courte durée',
+  ];
+
+  static List<String> allPublishCategories(List<String> apiCategories) {
+    final seen = <String>{};
+    final out = <String>[];
+    for (final c in [...apiCategories, ...marketplaceCategoryNames, ...fashionCategoryNames]) {
+      if (seen.add(c)) out.add(c);
+    }
+    return out;
+  }
+
+  static bool isVehicleCategory(String? category) {
+    if (category == null) return false;
+    final c = category.toLowerCase();
+    return c.contains('véhicule') || c.contains('vehicule') || c.contains('voiture') ||
+        c.contains('moto') || c.contains('scooter') || c.contains('camion') ||
+        c.contains('bus') || c.contains('pièces auto') || c.contains('pieces auto') ||
+        c.contains('pneu') || c.contains('jante') || c == 'véhicules';
+  }
+
+  static bool isRealEstateCategory(String? category) {
+    if (category == null) return false;
+    final c = category.toLowerCase();
+    return c.contains('immobilier') || c.contains('appartement') || c.contains('maison') ||
+        c.contains('parcelle') || c.contains('terrain') || c.contains('bureau') ||
+        c.contains('commerce') || c.contains('colocation') || c.contains('location courte');
+  }
+
+  static bool isHotelCategory(String? category) {
+    if (category == null) return false;
+    final c = category.toLowerCase();
+    return c.contains('hôtel') || c.contains('hotel') || c.contains('hébergement') ||
+        c.contains('hebergement') || c.contains('auberge') || c.contains('guesthouse') ||
+        c.contains('événement') || c.contains('evenement') || c.contains('salle');
+  }
+
+  static bool isClothingCategory(String? category) {
+    if (category == null || isShoeCategory(category) || isPantsCategory(category)) return false;
     final c = category.toLowerCase();
     return c.contains('mode') ||
         c.contains('vêtement') ||
         c.contains('vetement') ||
-        c.contains('habit') ||
-        c.contains('chaussure') ||
-        c.contains('soulier') ||
-        c.contains('basket') ||
-        c.contains('sneaker') ||
-        c.contains('sandale') ||
-        c.contains('pantalon') ||
-        c.contains('jean') ||
         c.contains('chemise') ||
         c.contains('robe') ||
         c.contains('jupe') ||
         c.contains('veste') ||
         c.contains('manteau') ||
         c.contains('sportswear') ||
-        c.contains('sport') ||
-        c.contains('bébé') ||
-        c.contains('bebe') ||
-        c.contains('enfant') ||
         c.contains('accessoire');
+  }
+
+  static bool categoryNeedsSize(String? category) {
+    if (category == null || category.isEmpty) return false;
+    return isShoeCategory(category) ||
+        isPantsCategory(category) ||
+        isKidsCategory(category) ||
+        isClothingCategory(category);
   }
 
   static bool isShoeCategory(String? category) {
@@ -96,7 +139,7 @@ class ListingAttributes {
     return c.contains('chaussure') ||
         c.contains('soulier') ||
         c.contains('sneaker') ||
-        c.contains('basket') ||
+        (c.contains('basket') && !c.contains('ball')) ||
         c.contains('sandale') ||
         c.contains('botte');
   }
@@ -127,7 +170,18 @@ class ListingAttributes {
     return clothingSizes;
   }
 
-  static bool categorySupportsExtraParams(String? category) => categoryNeedsSize(category);
+  static bool categorySupportsExtraParams(String? category) {
+    if (category == null || category.isEmpty) return false;
+    return categoryNeedsSize(category) ||
+        isVehicleCategory(category) ||
+        isRealEstateCategory(category) ||
+        isHotelCategory(category);
+  }
+
+  static const vehicleYears = ['2024', '2023', '2022', '2021', '2020', '2019', '2018', '2017', '2016', '2015', '≤ 2014'];
+  static const fuelTypes = ['Essence', 'Diesel', 'Hybride', 'Électrique'];
+  static const realEstateTypes = ['Vente', 'Location', 'Colocation'];
+  static const roomCounts = ['Studio', '1', '2', '3', '4', '5+'];
 
   /// Attributs JSON unifiés (localisation + mode + catalogue).
   static String buildAttributes({
@@ -144,6 +198,13 @@ class ListingAttributes {
     String? material,
     String? gender,
     String? audience,
+    String? vehicleYear,
+    String? mileageKm,
+    String? fuel,
+    String? surfaceSqm,
+    String? rooms,
+    String? listingType,
+    String? vehicleModel,
   }) {
     final map = <String, dynamic>{};
     if (province != null && province.trim().isNotEmpty) map['province'] = province.trim();
@@ -170,6 +231,19 @@ class ListingAttributes {
     if (material != null && material.trim().isNotEmpty) map['material'] = material.trim();
     if (gender != null && gender.trim().isNotEmpty) map['gender'] = _genderKey(gender);
     if (audience != null && audience.trim().isNotEmpty) map['audience'] = _audienceKey(audience);
+
+    if (isVehicleCategory(category)) {
+      if (vehicleYear != null && vehicleYear.trim().isNotEmpty) map['vehicle_year'] = vehicleYear.trim();
+      if (mileageKm != null && mileageKm.trim().isNotEmpty) map['mileage_km'] = mileageKm.trim();
+      if (fuel != null && fuel.trim().isNotEmpty) map['fuel'] = fuel.trim();
+      if (vehicleModel != null && vehicleModel.trim().isNotEmpty) map['vehicle_model'] = vehicleModel.trim();
+      if (brand != null && brand.trim().isNotEmpty) map['brand'] = brand.trim();
+    }
+    if (isRealEstateCategory(category) || isHotelCategory(category)) {
+      if (listingType != null && listingType.trim().isNotEmpty) map['listing_type'] = listingType.trim();
+      if (surfaceSqm != null && surfaceSqm.trim().isNotEmpty) map['surface_sqm'] = surfaceSqm.trim();
+      if (rooms != null && rooms.trim().isNotEmpty) map['rooms'] = rooms.trim();
+    }
 
     if (map.isEmpty) return '';
     return jsonEncode(map);
@@ -318,6 +392,8 @@ class ListingAttributes {
       return null;
     }
   }
+
+  static String encodeMap(Map<String, dynamic> map) => jsonEncode(map);
 
   static String? parseSize(dynamic attributes) {
     final m = decodeMap(attributes);

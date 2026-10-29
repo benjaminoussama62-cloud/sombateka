@@ -40,6 +40,7 @@ const PAGES = {
 let currentPage = "dashboard";
 let statsCache = null;
 let kycTab = "pending";
+let adminEnvironment = "dev";
 
 function toast(msg, isError = false) {
   const el = $("#toast");
@@ -1570,7 +1571,7 @@ async function renderTrash() {
         <button type="button" class="btn btn-ghost btn-sm" id="trash-filter-all">Tout</button>
         <button type="button" class="btn btn-ghost btn-sm" id="trash-filter-publication">Publications</button>
         <button type="button" class="btn btn-ghost btn-sm" id="trash-filter-listing">Annonces</button>
-        <button type="button" class="btn btn-danger btn-sm" id="trash-reset-beta" style="margin-left:auto">Réinitialiser données beta</button>
+        ${adminEnvironment !== "production" ? '<button type="button" class="btn btn-danger btn-sm" id="trash-reset-beta" style="margin-left:auto">Réinitialiser données beta</button>' : ""}
       </div>
       <div class="table-wrap">
         <table class="data-table">
@@ -1621,14 +1622,17 @@ async function renderTrash() {
   $("#trash-filter-all").addEventListener("click", () => { filter = ""; loadTrash(); });
   $("#trash-filter-publication").addEventListener("click", () => { filter = "publication"; loadTrash(); });
   $("#trash-filter-listing").addEventListener("click", () => { filter = "listing"; loadTrash(); });
-  $("#trash-reset-beta").addEventListener("click", async () => {
-    if (!confirm("SUPPRIMER tous les utilisateurs et toutes les annonces sauf les super administrateurs ?")) return;
-    if (!confirm("Dernière confirmation — cette action est irréversible.")) return;
-    const r = await api("/admin/trash/reset-beta-data", { method: "POST" });
-    toast("Données beta réinitialisées.");
-    console.log(r.summary);
-    loadTrash();
-  });
+  const resetBetaBtn = $("#trash-reset-beta");
+  if (resetBetaBtn) {
+    resetBetaBtn.addEventListener("click", async () => {
+      if (!confirm("SUPPRIMER tous les utilisateurs et toutes les annonces sauf les super administrateurs ?")) return;
+      if (!confirm("Dernière confirmation — cette action est irréversible.")) return;
+      const r = await api("/admin/trash/reset-beta-data", { method: "POST" });
+      toast("Données beta réinitialisées.");
+      console.log(r.summary);
+      loadTrash();
+    });
+  }
 
   await loadTrash();
 }
@@ -1642,6 +1646,12 @@ async function initDashboard() {
   if (!isAuthenticated()) {
     window.location.replace("/admin/login");
     return;
+  }
+  try {
+    const cfg = await fetch(`${window.location.origin}/admin/bootstrap-config`).then((r) => r.json());
+    adminEnvironment = cfg.environment || "dev";
+  } catch {
+    adminEnvironment = "dev";
   }
   try {
     const meRes = await api("/admin/me");

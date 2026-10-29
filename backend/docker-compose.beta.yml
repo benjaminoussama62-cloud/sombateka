@@ -7,7 +7,6 @@ services:
 
   backend:
     environment:
-      EXPOSE_OTP_IN_RESPONSE: "true"
       PAYMENT_SANDBOX_MODE: "true"
       DB_POOL_SIZE: "3"
       DB_MAX_OVERFLOW: "5"

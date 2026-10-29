@@ -2,20 +2,26 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../config/app_config.dart';
 import '../services/app_services.dart';
 import '../services/cart_ui_helper.dart';
 import '../services/data_service.dart';
+import '../services/marketplace_ui.dart';
 import '../theme/premium_theme.dart';
 import '../utils/constants.dart';
 import '../utils/listing_attributes.dart';
 import '../utils/listing_utils.dart';
+import '../utils/marketplace_layout.dart';
 import '../utils/rdc_locations.dart';
+import '../utils/responsive.dart';
 import '../services/listing_actions.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/app_confirm_dialog.dart';
 import '../widgets/fullscreen_image_viewer.dart';
 import '../widgets/listing_reviews_section.dart';
-import 'business_hub_screen.dart';
+import '../widgets/user_avatar.dart';
+import '../widgets/account_verification_badge.dart';
+import '../widgets/st_safe_area.dart';
 import '../widgets/marketplace_product_card.dart';
 import 'chat_screen.dart';
 import 'package:share_plus/share_plus.dart';
@@ -70,6 +76,7 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
             _publicationSiblings = _data.getPublicationSiblings(_listing);
           });
           await RecentlyViewedService.instance.track(_listing);
+          await _enrichSellerFromPublicProfile();
         }
         final own = normalizeListing(
           _listing,
@@ -299,7 +306,8 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
 
   @override
   Widget build(BuildContext context) {
-    final isPayment = !_isOwn &&
+    final isPayment = AppConfig.paymentsEnabled &&
+        !_isOwn &&
         (_listing['listingType']?.toString() == ListingType.payment || _isCatalog);
 
     return Scaffold(
@@ -337,8 +345,11 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
                         icon: const Icon(Icons.ios_share_rounded, color: Colors.white),
                       ),
                     ],
-                    flexibleSpace: FlexibleSpaceBar(background: _gallery()),
+                    flexibleSpace: FlexibleSpaceBar(
+                      background: MarketplaceLayout.centered(_gallery(), maxWidth: Responsive.maxDetailWidth),
+                    ),
                   ),
+                  MarketplaceLayout.centeredSliver(
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
@@ -394,14 +405,22 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
                               _chip(Icons.category_rounded, _s('category', 'Général')),
                               _chip(Icons.location_on_rounded, _s('location', 'RDC')),
                               if (_listing['isVerified'] == true || _listing['isOfficial'] == true)
-                                _chip(Icons.verified_rounded, 'Boutique officielle', gold: true),
+                            _chip(Icons.verified_rounded, 'Boutique officielle', gold: true),
                               if ((_listing['size']?.toString() ?? '').isNotEmpty && !_isCatalog)
                                 _chip(Icons.straighten_rounded, 'Taille ${_listing['size']}'),
                             ],
                           ),
+                          if (!_isOwn && (_listing['isOfficial'] == true || _listing['isVerified'] == true)) ...[
+                            const SizedBox(height: 14),
+                            _officialTrustBanner(),
+                          ],
                           if (_listingReviews != null && ((_listingReviews!['review_count'] as num?)?.toInt() ?? 0) > 0) ...[
                             const SizedBox(height: 10),
                             _ratingSummaryChip(),
+                          ],
+                          if (!_isOwn) ...[
+                            const SizedBox(height: 16),
+                            _sellerProfileCard(),
                           ],
                           const SizedBox(height: 24),
                           Text('Description', style: PremiumTheme.h1.copyWith(fontSize: 17)),
@@ -480,7 +499,7 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
                                         await _data.toggleFavorite(item['id']?.toString() ?? '');
                                         if (mounted) setState(() {});
                                       },
-                                      onAddToCart: () => CartUiHelper.addListing(context, item),
+                                      onAddToCart: () => CartUiHelper.toggleListing(context, item),
                                     ),
                                   );
                                 },
@@ -489,6 +508,8 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
                         ],
                       ),
                     ),
+                  ),
+                  maxWidth: Responsive.maxDetailWidth,
                   ),
                 ],
               ),
@@ -596,7 +617,7 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
                     await _data.toggleFavorite(item['id']?.toString() ?? '');
                     if (mounted) setState(() {});
                   },
-                  onAddToCart: () => CartUiHelper.addListing(context, item),
+                  onAddToCart: () => CartUiHelper.toggleListing(context, item),
                 ),
               );
             },
@@ -614,15 +635,15 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
 
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: isPro
-              ? [PremiumTheme.navy, PremiumTheme.blue.withValues(alpha: 0.85)]
-              : [const Color(0xFFF0FDF4), const Color(0xFFECFDF5)],
-        ),
-        borderRadius: PremiumTheme.radiusMd,
-        border: Border.all(color: isPro ? Colors.transparent : PremiumTheme.emerald.withValues(alpha: 0.4)),
-      ),
+      decoration: isPro
+          ? StGlowDecoration(borderRadius: PremiumTheme.radiusMd)
+          : BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFF0FDF4), Color(0xFFECFDF5)],
+              ),
+              borderRadius: PremiumTheme.radiusMd,
+              border: Border.all(color: PremiumTheme.emerald.withValues(alpha: 0.4)),
+            ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -654,10 +675,7 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
               ),
               if (isPro)
                 TextButton(
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const BusinessHubScreen()),
-                  ),
+                  onPressed: () => Navigator.pushNamed(context, AppRoutes.businessHub),
                   child: const Text('Espace Pro', style: TextStyle(color: PremiumTheme.gold, fontWeight: FontWeight.w800)),
                 ),
             ],
@@ -709,12 +727,13 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
   Widget _ownerBottomBar() {
     final id = int.tryParse(_listing['id']?.toString() ?? '');
     return Container(
-      padding: EdgeInsets.fromLTRB(12, 10, 12, 10 + MediaQuery.of(context).padding.bottom),
+      padding: StBottomInset.padding(context, left: 12, top: 10, right: 12, bottom: 10),
       decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 16, offset: const Offset(0, -4))],
       ),
-      child: Column(
+      child: MarketplaceLayout.centeredBar(
+      Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Row(
@@ -760,6 +779,7 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
             ),
           ),
         ],
+      ),
       ),
     );
   }
@@ -1400,13 +1420,20 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
 
   Widget _bottomBar(bool isPayment) {
     final disabled = _isOutOfStock;
+    final isOfficial = _listing['isOfficial'] == true || _listing['isVerified'] == true;
+    final primaryLabel = disabled
+        ? 'Indisponible'
+        : (isPayment
+            ? 'Mobile Money'
+            : (isOfficial ? 'Contacter la boutique' : 'Écrire au vendeur'));
     return Container(
-      padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + MediaQuery.of(context).padding.bottom),
+      padding: StBottomInset.padding(context, left: 16, top: 12, right: 16, bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 16, offset: const Offset(0, -4))],
       ),
-      child: Column(
+      child: MarketplaceLayout.centeredBar(
+      Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (disabled)
@@ -1437,19 +1464,62 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
                 child: ElevatedButton(
                   onPressed: disabled ? null : (isPayment ? _buyNow : _contactSeller),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: isPayment ? PremiumTheme.gold : PremiumTheme.blue,
+                    backgroundColor: isPayment
+                        ? PremiumTheme.gold
+                        : (isOfficial ? PremiumTheme.navy : PremiumTheme.blue),
                     foregroundColor: isPayment ? Colors.black87 : Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     elevation: 0,
                     shape: RoundedRectangleBorder(borderRadius: PremiumTheme.radiusMd),
                   ),
                   child: Text(
-                    disabled ? 'Indisponible' : (isPayment ? 'Mobile Money' : 'Écrire au vendeur'),
+                    primaryLabel,
                     style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+      ),
+    );
+  }
+
+  Widget _officialTrustBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            PremiumTheme.navy.withValues(alpha: 0.06),
+            PremiumTheme.gold.withValues(alpha: 0.12),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: PremiumTheme.gold.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.verified_rounded, color: PremiumTheme.gold, size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Boutique officielle vérifiée',
+                  style: PremiumTheme.h1.copyWith(fontSize: 14, color: PremiumTheme.navy),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Identité et documents contrôlés par SombaTeka (KYC). Contactez la boutique via la messagerie pour convenir de la remise en toute confiance.',
+                  style: PremiumTheme.body.copyWith(fontSize: 12, height: 1.4, color: PremiumTheme.textDark),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -1463,8 +1533,17 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
     final loc = _listing['location']?.toString() ?? _listing['city']?.toString() ?? '';
     final place = province.isNotEmpty ? '$province${loc.isNotEmpty ? ' · $loc' : ''}' : loc;
     final id = _listing['id']?.toString() ?? '';
+    final slug = title
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9àâäéèêëîïôöùûüç]+', unicode: true), '-')
+        .replaceAll(RegExp(r'-+'), '-')
+        .replaceAll(RegExp(r'^-|-$'), '');
+    final pathSlug = slug.isEmpty ? 'annonce' : (slug.length > 60 ? slug.substring(0, 60) : slug);
+    final url = id.isEmpty
+        ? 'https://sombatekaonline.com/'
+        : 'https://sombatekaonline.com/annonce/$id-$pathSlug';
     await Share.share(
-      '$title${price.isNotEmpty ? ' — $price' : ''}\n$place\n\nVoir sur SombaTeka (annonce #$id)',
+      '$title${price.isNotEmpty ? ' — $price' : ''}\n$place\n\n$url',
       subject: title,
     );
   }
@@ -1477,7 +1556,7 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
       HapticFeedback.mediumImpact();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      await MarketplaceUi.showActionError(context, e);
     }
   }
 
@@ -1551,6 +1630,119 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
 
   Future<void> _contactSeller() => _openChat();
 
+  Future<void> _enrichSellerFromPublicProfile() async {
+    final sellerId = int.tryParse(_listing['sellerId']?.toString() ?? _listing['seller_id']?.toString() ?? '');
+    if (sellerId == null) return;
+    final name = _listing['sellerName']?.toString() ?? '';
+    final hasAvatar = (_listing['sellerAvatarUrl']?.toString() ?? '').isNotEmpty;
+    if (name != 'Vendeur' && name != 'Vendeur SombaTeka' && hasAvatar) return;
+
+    final profile = await _data.fetchPublicUserProfile(sellerId);
+    if (profile == null || !mounted) return;
+    setState(() {
+      _listing = {
+        ..._listing,
+        'sellerName': profile['display_name'] ?? name,
+        if (profile['avatar_url'] != null) 'sellerAvatarUrl': profile['avatar_url'],
+        if (profile['official_logo_url'] != null) 'sellerLogoUrl': profile['official_logo_url'],
+        'sellerRating': profile['average_rating'] ?? _listing['sellerRating'],
+        'sellerReviewCount': profile['review_count'] ?? _listing['sellerReviewCount'],
+        'sellerProfilePublic': profile['profile_public'] != false,
+        'sellerAccountVerified': profile['account_verified'] == true || profile['email_verified'] == true,
+        'sellerEmailVerified': profile['account_verified'] == true || profile['email_verified'] == true,
+      };
+    });
+  }
+
+  Widget _sellerProfileCard() {
+    final name = _listing['sellerName']?.toString() ?? 'Vendeur';
+    final isOfficial = _listing['isOfficial'] == true || _listing['listingType'] == ListingType.payment;
+    final rating = (_listing['sellerRating'] as num?)?.toDouble() ?? 0;
+    final reviewCount = (_listing['sellerReviewCount'] as num?)?.toInt() ?? 0;
+    final avatar = _listing['sellerAvatarUrl']?.toString();
+    final logo = _listing['sellerLogoUrl']?.toString();
+    final imageUrl = (isOfficial && logo != null && logo.isNotEmpty) ? logo : (avatar != null && avatar.isNotEmpty ? avatar : null);
+    final profilePublic = _listing['sellerProfilePublic'] != false;
+    final accountVerified =
+        _listing['sellerAccountVerified'] == true || _listing['sellerEmailVerified'] == true;
+
+    return Material(
+      color: Colors.white,
+      borderRadius: PremiumTheme.radiusMd,
+      child: InkWell(
+        onTap: _openSellerProfile,
+        borderRadius: PremiumTheme.radiusMd,
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: PremiumTheme.radiusMd,
+            border: Border.all(color: const Color(0xFFE8ECF4)),
+            boxShadow: PremiumTheme.softShadow,
+          ),
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              UserAvatar(imageUrl: imageUrl, name: name, radius: 26),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Vendeur', style: PremiumTheme.label.copyWith(fontSize: 10)),
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        if (isOfficial) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(color: PremiumTheme.gold, borderRadius: BorderRadius.circular(4)),
+                            child: const Text('Officiel', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w800)),
+                          ),
+                          const SizedBox(width: 6),
+                        ] else ...[
+                          AccountVerificationBadge(verified: accountVerified, compact: true),
+                          const SizedBox(width: 6),
+                        ],
+                        if (reviewCount > 0)
+                          Text('★ ${rating.toStringAsFixed(1)} ($reviewCount)', style: PremiumTheme.label.copyWith(fontSize: 10))
+                        else
+                          Text('Nouveau vendeur', style: PremiumTheme.label.copyWith(fontSize: 10)),
+                      ],
+                    ),
+                    if (!profilePublic)
+                      Text('Profil privé · annonces visibles', style: PremiumTheme.label.copyWith(fontSize: 9)),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  const Icon(Icons.chevron_right_rounded, color: PremiumTheme.textMuted),
+                  Text('Voir profil', style: PremiumTheme.label.copyWith(fontSize: 9, color: PremiumTheme.blue)),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openSellerProfile() {
+    final sellerId = int.tryParse(_listing['sellerId']?.toString() ?? _listing['seller_id']?.toString() ?? '');
+    if (sellerId == null) return;
+    Navigator.pushNamed(
+      context,
+      AppRoutes.publicProfile,
+      arguments: {'userId': sellerId, 'listing': _listing},
+    );
+  }
+
   Future<void> _openChat({String? autoSend}) async {
     final user = _data.currentUser;
     if (user == null) {
@@ -1572,7 +1764,7 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
     }
 
     final isOfficial = _listing['isOfficial'] == true || _listing['listingType'] == ListingType.payment;
-    if (isOfficial) {
+    if (isOfficial && AppConfig.paymentsEnabled) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Boutique officielle : achetez d\'abord (Mobile Money ou sur place) pour ouvrir la messagerie'),
@@ -1590,11 +1782,15 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
       MaterialPageRoute(
         builder: (_) => ChatScreen(
           peerId: sellerId,
-          peerName: 'Annonce #$listingId',
+          peerName: _listing['sellerName']?.toString() ?? 'Vendeur',
           listingId: listingId,
           listingTitle: _s('title', ''),
           listingImageUrl: _listing['imageUrl']?.toString(),
-          isOfficialPeer: false,
+          isOfficialPeer: isOfficial,
+          peerAccountVerified:
+              _listing['sellerAccountVerified'] == true || _listing['sellerEmailVerified'] == true,
+          peerEmailVerified:
+              _listing['sellerAccountVerified'] == true || _listing['sellerEmailVerified'] == true,
           autoSendMessage: autoSend,
         ),
       ),
@@ -1602,6 +1798,16 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
   }
 
   void _buyNow() {
+    if (!AppConfig.paymentsEnabled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Paiement in-app bientôt disponible. Contactez le vendeur.'),
+          backgroundColor: Color(0xFFDC2626),
+        ),
+      );
+      _contactSeller();
+      return;
+    }
     Navigator.pushNamed(context, AppRoutes.payment, arguments: _listingForAction());
   }
 }

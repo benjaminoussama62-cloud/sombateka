@@ -3,21 +3,23 @@
 <plist version="1.0">
 <dict>
 	<key>CLIENT_ID</key>
-	<string>123456789012-abcdefghijklmnopqrstuvwxyz123456.apps.googleusercontent.com</string>
+	<string>508328631175-5jmppm3fui8fdifd4u5n5gs8lkk4416q.apps.googleusercontent.com</string>
 	<key>REVERSED_CLIENT_ID</key>
-	<string>com.googleusercontent.apps.123456789012-abcdefghijklmnopqrstuvwxyz123456</string>
+	<string>com.googleusercontent.apps.508328631175-5jmppm3fui8fdifd4u5n5gs8lkk4416q</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>508328631175-s74u30lar3127ck7p0umeqp56khpmmnv.apps.googleusercontent.com</string>
 	<key>API_KEY</key>
-	<string>AIzaSyAbCdEfGhIjKlMnOpQrStUvWxYz1234567</string>
+	<string>AIzaSyCSY-E9q5__P6mKlk_T68XK-kRt3seZNyU</string>
 	<key>GCM_SENDER_ID</key>
-	<string>123456789012</string>
+	<string>508328631175</string>
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
 	<string>com.sombateka.st</string>
 	<key>PROJECT_ID</key>
-	<string>sombateka-rdc</string>
+	<string>sombatekapro</string>
 	<key>STORAGE_BUCKET</key>
-	<string>sombateka-rdc.appspot.com</string>
+	<string>sombatekapro.firebasestorage.app</string>
 	<key>IS_ADS_ENABLED</key>
 	<false></false>
 	<key>IS_ANALYTICS_ENABLED</key>
@@ -29,6 +31,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:123456789012:ios:abcdef1234567890</string>
+	<string>1:508328631175:ios:b179ea35cf7999c58b1122</string>
 </dict>
 </plist>

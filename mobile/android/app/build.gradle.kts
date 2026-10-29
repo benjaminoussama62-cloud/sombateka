@@ -16,7 +16,8 @@ if (keystorePropertiesFile.exists()) {
 android {
     namespace = "com.sombateka.st"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    // Match Flutter plugin requirement (jni); local NDK 27 is junctioned as 28.2
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

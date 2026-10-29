@@ -44,12 +44,24 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Future<void> _onNotificationTap(Map<String, dynamic> item) async {
     final id = item['id'];
+    final type = item['type']?.toString() ?? '';
+
+    if (type == 'account_verification') {
+      if (id is int) {
+        await _data.markNotificationRead(id);
+        if (mounted) setState(() {});
+      }
+      if (!mounted) return;
+      await Navigator.pushNamed(context, AppRoutes.settings);
+      await _load();
+      return;
+    }
+
     if (id is int) {
       await _data.markNotificationRead(id);
       if (mounted) setState(() {});
     }
 
-    final type = item['type']?.toString() ?? '';
     if (!_isSupportNotification(type) || !mounted) return;
 
     try {
@@ -174,11 +186,16 @@ class _NotificationTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final type = item['type']?.toString() ?? 'system';
     final read = item['is_read'] == true;
+    final important = item['important'] == true || type == 'account_verification';
     final icon = _iconFor(type);
     final color = _colorFor(type);
 
     return Material(
-      color: read ? Colors.white : PremiumTheme.blue.withValues(alpha: 0.06),
+      color: read
+          ? Colors.white
+          : (important
+              ? const Color(0xFFFFF7ED)
+              : PremiumTheme.blue.withValues(alpha: 0.06)),
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: () {
@@ -190,7 +207,12 @@ class _NotificationTile extends StatelessWidget {
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: read ? AppColors.border : PremiumTheme.blue.withValues(alpha: 0.25)),
+            border: Border.all(
+              color: read
+                  ? AppColors.border
+                  : (important ? const Color(0xFFF97316) : PremiumTheme.blue.withValues(alpha: 0.25)),
+              width: important && !read ? 1.5 : 1,
+            ),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -209,6 +231,24 @@ class _NotificationTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (important && !read)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(
+                          children: [
+                            Icon(Icons.priority_high_rounded, size: 16, color: color),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Alerte importante',
+                              style: PremiumTheme.label.copyWith(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                color: color,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     Row(
                       children: [
                         Expanded(
@@ -269,6 +309,8 @@ class _NotificationTile extends StatelessWidget {
         return Icons.chat_rounded;
       case 'welcome':
         return Icons.celebration_rounded;
+      case 'account_verification':
+        return Icons.verified_user_rounded;
       default:
         return Icons.notifications_rounded;
     }
@@ -298,6 +340,8 @@ class _NotificationTile extends StatelessWidget {
         return const Color(0xFFD97706);
       case 'welcome':
         return PremiumTheme.gold;
+      case 'account_verification':
+        return const Color(0xFFEA580C);
       default:
         return PremiumTheme.blue;
     }

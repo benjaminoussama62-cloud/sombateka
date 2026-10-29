@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -8,8 +9,11 @@ import '../services/data_service.dart';
 import '../services/social_auth_service.dart';
 import '../theme/premium_theme.dart';
 import '../utils/constants.dart';
+import '../utils/responsive.dart';
 import '../widgets/otp_pin_input.dart';
 import '../widgets/social_login_buttons.dart';
+import '../widgets/st_icon.dart';
+import '../utils/friendly_error.dart';
 
 class OTPScreen extends StatefulWidget {
   const OTPScreen({super.key});
@@ -32,9 +36,17 @@ class _OTPScreenState extends State<OTPScreen> with SingleTickerProviderStateMix
   String _email = '';
   String _channel = 'phone';
   String _userName = '';
+  String _authMode = 'login';
   String? _devCode;
+  bool _emailSent = false;
+  bool _smsSent = false;
   bool _argsLoaded = false;
   String? _lastError;
+
+  bool get _deliveryConfirmed =>
+      (_devCode != null && _devCode!.isNotEmpty) ||
+      (_channel == 'email' && _emailSent) ||
+      (_channel == 'phone' && _smsSent);
 
   @override
   void initState() {
@@ -60,7 +72,11 @@ class _OTPScreenState extends State<OTPScreen> with SingleTickerProviderStateMix
     _channel = args['channel']?.toString() ?? 'phone';
     _email = args['email']?.toString() ?? '';
     _userName = args['name']?.toString() ?? '';
+    _authMode = args['mode']?.toString() ?? 'login';
     _devCode = args['dev_code']?.toString();
+    if (!kDebugMode) _devCode = null;
+    _emailSent = args['email_sent'] == true;
+    _smsSent = args['sms_sent'] == true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_devCode != null && _devCode!.isNotEmpty) {
         _pinKey.currentState?.setCode(DataService.normalizeOtpCode(_devCode!));
@@ -129,7 +145,7 @@ class _OTPScreenState extends State<OTPScreen> with SingleTickerProviderStateMix
       setState(() {
         _isLoading = false;
         _isError = true;
-        _lastError = e.toString().replaceFirst('Exception: ', '');
+        _lastError = friendlyError(e, fallback: 'Code incorrect ou expiré. Réessayez.');
       });
       _pinKey.currentState?.clear();
       _pinKey.currentState?.focus();
@@ -144,14 +160,33 @@ class _OTPScreenState extends State<OTPScreen> with SingleTickerProviderStateMix
     try {
       final Map<String, dynamic> r;
       if (_channel == 'email') {
-        r = await DataService().sendEmailOtp(_email, displayName: _userName.isNotEmpty ? _userName : null);
+        r = await DataService().sendEmailOtp(
+          _email,
+          purpose: _authMode,
+          displayName: _userName.isNotEmpty ? _userName : null,
+        );
       } else {
-        r = await DataService().sendOtp(_phoneE164);
+        r = await DataService().sendOtp(
+          _phoneE164,
+          purpose: _authMode,
+          displayName: _userName.isNotEmpty ? _userName : null,
+        );
       }
       final code = r['dev_code']?.toString();
-      if (code != null && code.isNotEmpty) {
-        setState(() => _devCode = code);
+      final emailSent = r['email_sent'] == true;
+      final smsSent = r['sms_sent'] == true;
+      if (code != null && code.isNotEmpty && kDebugMode) {
+        setState(() {
+          _devCode = code;
+          _emailSent = emailSent;
+          _smsSent = smsSent;
+        });
         _pinKey.currentState?.setCode(DataService.normalizeOtpCode(code));
+      } else {
+        setState(() {
+          _emailSent = emailSent;
+          _smsSent = smsSent;
+        });
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -165,7 +200,7 @@ class _OTPScreenState extends State<OTPScreen> with SingleTickerProviderStateMix
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Échec envoi : $e')),
+        SnackBar(content: Text(friendlyError(e, fallback: 'Envoi impossible. Réessayez.'))),
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -186,7 +221,7 @@ class _OTPScreenState extends State<OTPScreen> with SingleTickerProviderStateMix
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Connexion impossible : $e')),
+        SnackBar(content: Text(friendlyError(e, fallback: 'Connexion impossible. Réessayez.'))),
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -195,45 +230,68 @@ class _OTPScreenState extends State<OTPScreen> with SingleTickerProviderStateMix
 
   @override
   Widget build(BuildContext context) {
+    final compact = Responsive.isCompact(context);
+
     return Scaffold(
       backgroundColor: PremiumTheme.navy,
-      body: SafeArea(
-        child: FadeTransition(
-          opacity: _slideAnim,
-          child: SlideTransition(
-            position: Tween<Offset>(begin: const Offset(0, 0.04), end: Offset.zero)
-                .animate(_slideAnim),
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-                      ),
-                      const Expanded(
-                        child: Text(
-                          'Vérification',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
+      resizeToAvoidBottomInset: true,
+      body: DecoratedBox(
+        decoration: PremiumTheme.heroGradient,
+        child: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: Responsive.isDesktopWeb(context) ? 560 : double.infinity,
+            ),
+            child: FadeTransition(
+              opacity: _slideAnim,
+              child: SlideTransition(
+                position: Tween<Offset>(begin: const Offset(0, 0.04), end: Offset.zero)
+                    .animate(_slideAnim),
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
+                      child: Row(
+                        children: [
+                          IconButton(
+                            onPressed: () => Navigator.pop(context),
+                            icon: const StIcon(
+                              icon: Icons.arrow_back_rounded,
+                              webGlyph: '←',
+                              color: Colors.white,
+                              size: 24,
+                            ),
                           ),
-                        ),
+                          const Expanded(
+                            child: Text(
+                              'Vérification',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 48),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const Icon(Icons.mark_email_read_rounded,
-                            color: PremiumTheme.gold, size: 48),
+                    ),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.fromLTRB(20, 8, 20, compact ? 16 : 24),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const Center(
+                              child: StIcon(
+                                icon: Icons.mark_email_read_rounded,
+                                webGlyph: '📨',
+                                color: PremiumTheme.gold,
+                                size: 48,
+                              ),
+                            ),
                         const SizedBox(height: 16),
                         const Text(
                           'Entrez votre code',
@@ -272,7 +330,7 @@ class _OTPScreenState extends State<OTPScreen> with SingleTickerProviderStateMix
                           ),
                           child: Column(
                             children: [
-                              if (_devCode != null) ...[
+                              if (_devCode != null && kDebugMode) ...[
                                 Container(
                                   width: double.infinity,
                                   padding: const EdgeInsets.all(14),
@@ -283,9 +341,9 @@ class _OTPScreenState extends State<OTPScreen> with SingleTickerProviderStateMix
                                   ),
                                   child: Column(
                                     children: [
-                                      const Text(
-                                        'Code de test (dev)',
-                                        style: TextStyle(
+                                      Text(
+                                        kDebugMode ? 'Code de test (dev)' : 'Votre code de connexion',
+                                        style: const TextStyle(
                                           fontSize: 12,
                                           fontWeight: FontWeight.w600,
                                           color: Color(0xFF166534),
@@ -306,6 +364,41 @@ class _OTPScreenState extends State<OTPScreen> with SingleTickerProviderStateMix
                                           DataService.normalizeOtpCode(_devCode!),
                                         ),
                                         child: const Text('Insérer le code'),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 20),
+                              ] else if (!_deliveryConfirmed) ...[
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFFF7ED),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(color: const Color(0xFFFED7AA)),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Code non reçu ?',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFF9A3412),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        _channel == 'email'
+                                            ? 'Vérifiez les spams. Si rien n\'arrive, attendez 1 min puis touchez « Renvoyer un code ».'
+                                            : 'Le SMS peut prendre 1–2 minutes. Vérifiez le numéro +243… puis renvoyez le code.',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          height: 1.4,
+                                          color: Color(0xFF7C2D12),
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -403,13 +496,16 @@ class _OTPScreenState extends State<OTPScreen> with SingleTickerProviderStateMix
                             onApple: () => _socialLogin('apple'),
                           ),
                         ],
-                      ],
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
+        ),
         ),
       ),
     );

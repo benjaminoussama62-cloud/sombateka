@@ -9,6 +9,9 @@ from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parent.parent
 WEBSITE = ROOT.parent / "website" / "assets"
+ADMIN_ASSETS = ROOT.parent / "backend" / "admin-panel" / "assets"
+FLUTTER_WEB = ROOT / "web"
+FLUTTER_WEB_ICONS = FLUTTER_WEB / "icons"
 
 BG = (13, 27, 75)
 BAG = (255, 255, 255)
@@ -98,10 +101,46 @@ def generate_web_assets(master: Path) -> None:
     print(f"[OK] OG image: {WEBSITE / 'og-image.png'}")
 
 
+def generate_flutter_web_pwa_icons(master: Path) -> None:
+    """Icônes PWA Flutter Web (même marque que l'APK)."""
+    FLUTTER_WEB_ICONS.mkdir(parents=True, exist_ok=True)
+    sizes = {
+        FLUTTER_WEB_ICONS / "Icon-192.png": 192,
+        FLUTTER_WEB_ICONS / "Icon-512.png": 512,
+        FLUTTER_WEB_ICONS / "Icon-maskable-192.png": 192,
+        FLUTTER_WEB_ICONS / "Icon-maskable-512.png": 512,
+    }
+    for path, size in sizes.items():
+        _icon_from_master(master, size, path)
+    _icon_from_master(master, 32, FLUTTER_WEB / "favicon.png")
+    _icon_from_master(master, 16, FLUTTER_WEB / "favicon-16.png")
+    print(f"[OK] PWA web icons: {FLUTTER_WEB_ICONS}")
+
+
+def generate_admin_panel_icons(master: Path) -> None:
+    """Favicons panneau admin (/admin)."""
+    ADMIN_ASSETS.mkdir(parents=True, exist_ok=True)
+    _icon_from_master(master, 16, ADMIN_ASSETS / "favicon-16.png")
+    _icon_from_master(master, 32, ADMIN_ASSETS / "favicon-32.png")
+    _icon_from_master(master, 180, ADMIN_ASSETS / "apple-touch-icon.png")
+    img = Image.open(master).convert("RGBA")
+    img16 = img.resize((16, 16), Image.Resampling.LANCZOS)
+    img32 = img.resize((32, 32), Image.Resampling.LANCZOS)
+    img32.save(
+        ADMIN_ASSETS / "favicon.ico",
+        format="ICO",
+        sizes=[(16, 16), (32, 32)],
+        append_images=[img16],
+    )
+    print(f"[OK] Admin panel icons: {ADMIN_ASSETS}")
+
+
 def main() -> int:
     icon = generate_app_icon()
     generate_feature_graphic()
     generate_web_assets(icon)
+    generate_flutter_web_pwa_icons(icon)
+    generate_admin_panel_icons(icon)
     print("\n[OK] Tous les assets store generes.")
     return 0
 

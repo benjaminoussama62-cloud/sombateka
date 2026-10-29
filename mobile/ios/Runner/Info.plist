@@ -78,6 +78,17 @@
 		<string>SombaTeka a besoin de la caméra pour photographier vos articles.</string>
 		<key>ITSAppUsesNonExemptEncryption</key>
 		<false/>
+		<key>CFBundleURLTypes</key>
+		<array>
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>com.googleusercontent.apps.508328631175-5jmppm3fui8fdifd4u5n5gs8lkk4416q</string>
+				</array>
+			</dict>
+		</array>
 		<key>UIStatusBarHidden</key>
 		<false/>
 	</dict>

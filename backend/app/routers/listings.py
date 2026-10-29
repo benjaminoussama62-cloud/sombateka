@@ -8,7 +8,7 @@ from sqlalchemy import desc, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
-from app.deps import get_current_user
+from app.deps import get_current_user, get_optional_user
 from app.idempotency import require_idempotency_key, save_idempotency_response
 from app.constants import DEMO_SELLER_PHONE
 from app.models import Category, Listing, ListingImage, ListingStatus, Message, Review, User, UserRole
@@ -16,10 +16,14 @@ from app.schemas import (
     ListingCreateRequest,
     ListingDetailPublic,
     ListingImagePublic,
+    ListingUpdateRequest,
     OfficialCatalogCreateRequest,
     OfficialCollectionCreateRequest,
 )
 from app.services.storage import UPLOAD_DIR, public_url, save_image
+from app.services.user_public import user_to_public
+from app.services.search_notify import notify_listing_deleted, notify_listing_updated
+from app.services.google_merchant import sync_listing_async
 
 router = APIRouter(prefix="/listings", tags=["listings"])
 
@@ -32,6 +36,42 @@ _ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 def _public_upload_url(key: str) -> str:
     return public_url(key)
+
+
+def _seller_card_fields(seller: User | None, db: Session) -> dict:
+    """Champs vendeur affichés sur cartes et fiche annonce (données non sensibles)."""
+    if not seller:
+        return {
+            "seller_display_name": None,
+            "seller_avatar_url": None,
+            "seller_logo_url": None,
+            "seller_rating": 0.0,
+            "seller_review_count": 0,
+            "seller_profile_public": True,
+            "seller_email_verified": False,
+            "seller_account_verified": False,
+        }
+    pub = user_to_public(seller, db)
+    profile_public = bool(seller.privacy_profile_public)
+    if profile_public:
+        display_name = seller.official_name or seller.display_name or "Vendeur SombaTeka"
+        avatar_url = pub.avatar_url
+        logo_url = pub.official_logo_url
+    else:
+        display_name = "Vendeur SombaTeka"
+        avatar_url = None
+        logo_url = None
+    verified = bool(pub.email_verified)
+    return {
+        "seller_display_name": display_name,
+        "seller_avatar_url": avatar_url,
+        "seller_logo_url": logo_url,
+        "seller_rating": pub.average_rating,
+        "seller_review_count": pub.review_count,
+        "seller_profile_public": profile_public,
+        "seller_email_verified": verified,
+        "seller_account_verified": verified,
+    }
 
 
 def _attr_json_match(key: str, value: str):
@@ -169,6 +209,8 @@ def create_listing(
     try:
         db.commit()
         db.refresh(listing)
+        notify_listing_updated(listing.id, listing.title)
+        sync_listing_async(listing.id)
         resp = {"id": listing.id}
         save_idempotency_response(
             db=db,
@@ -235,6 +277,8 @@ def create_official_catalog(
     try:
         db.commit()
         db.refresh(listing)
+        notify_listing_updated(listing.id, listing.title)
+        sync_listing_async(listing.id)
         resp = {"id": listing.id, "variant_count": len(variants)}
         save_idempotency_response(
             db=db,
@@ -313,6 +357,11 @@ def create_official_collection(
 
     try:
         db.commit()
+        for lid in listing_ids:
+            row = db.get(Listing, lid)
+            if row:
+                notify_listing_updated(row.id, row.title)
+                sync_listing_async(row.id)
         resp = {
             "publication_id": publication_id,
             "publication_title": pub_title,
@@ -482,6 +531,10 @@ def list_listings(
     rows = db.execute(stmt).all()
 
     seller_ids = {r.seller_id for r in rows}
+    seller_map: dict[int, User] = {}
+    if seller_ids:
+        for u in db.scalars(select(User).where(User.id.in_(seller_ids))):
+            seller_map[u.id] = u
     rating_map: dict[int, float] = {}
     if seller_ids:
         rating_rows = db.execute(
@@ -511,26 +564,29 @@ def list_listings(
             if len(bucket) < 12:
                 bucket.append(_public_upload_url(key))
 
-    items = [
-        {
-            "id": r.id,
-            "title": r.title,
-            "city": r.city,
-            "price_cdf": r.price_cdf,
-            "seller_id": r.seller_id,
-            "created_at": r.created_at,
-            "category_id": r.category_id,
-            "category_name": cat_map.get(r.category_id) if r.category_id else None,
-            "attributes": r.attributes,
-            "is_official": bool(r.is_verified_seller) or r.role == UserRole.official_seller,
-            "seller_rating": rating_map.get(r.seller_id, 0.0),
-            "primary_image_url": (_public_upload_url(r.primary_image_key) if r.primary_image_key else None),
-            "image_urls": images_map.get(r.id) or (
-                [_public_upload_url(r.primary_image_key)] if r.primary_image_key else []
-            ),
-        }
-        for r in rows
-    ]
+    items = []
+    for r in rows:
+        seller_fields = _seller_card_fields(seller_map.get(r.seller_id), db)
+        items.append(
+            {
+                "id": r.id,
+                "title": r.title,
+                "city": r.city,
+                "price_cdf": r.price_cdf,
+                "seller_id": r.seller_id,
+                "created_at": r.created_at,
+                "category_id": r.category_id,
+                "category_name": cat_map.get(r.category_id) if r.category_id else None,
+                "attributes": r.attributes,
+                "is_official": bool(r.is_verified_seller) or r.role == UserRole.official_seller,
+                "seller_rating": seller_fields["seller_rating"] or rating_map.get(r.seller_id, 0.0),
+                **seller_fields,
+                "primary_image_url": (_public_upload_url(r.primary_image_key) if r.primary_image_key else None),
+                "image_urls": images_map.get(r.id) or (
+                    [_public_upload_url(r.primary_image_key)] if r.primary_image_key else []
+                ),
+            }
+        )
 
     if mix_promoted:
         from app.services.feed_mix import mix_promoted_feed
@@ -595,18 +651,24 @@ def my_listings(
 async def search_by_image(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    _user: User | None = Depends(get_optional_user),
 ) -> dict:
-    from app.services.image_search import find_similar_listings
+    from app.services.visual_search import search_by_image_bytes
     from app.services.storage import load_image_bytes
 
     data = await file.read()
     if len(data) < 50:
         raise HTTPException(status_code=400, detail="Image trop petite")
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Image trop lourde (max 5 Mo)")
+    content_type = normalize_image_content_type(file.content_type, file.filename, data)
+    if content_type not in _ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="Format image non supporté (JPEG, PNG, WebP)")
 
     stmt = (
         select(Listing)
         .join(User, Listing.seller_id == User.id)
-        .options(selectinload(Listing.images))
+        .options(selectinload(Listing.images), selectinload(Listing.seller))
         .where(Listing.status == ListingStatus.active)
         .where(User.phone_e164 != DEMO_SELLER_PHONE)
     )
@@ -622,13 +684,28 @@ async def search_by_image(
         if keys and load_image_bytes(keys[0]):
             loadable += 1
 
-    top = find_similar_listings(data, candidates)
+    top = search_by_image_bytes(data, candidates, db=db)
 
     items = []
     for sim, listing in top:
         images_sorted = sorted(listing.images, key=lambda i: i.id)
         primary = _public_upload_url(images_sorted[0].key) if images_sorted else None
         cat = db.get(Category, listing.category_id) if listing.category_id else None
+        score = float(sim or 0)
+        if score >= 0.80:
+            tier = "exact"
+        elif score >= 0.60:
+            tier = "close"
+        else:
+            tier = "related"
+        seller = listing.seller
+        is_official = bool(
+            seller
+            and (
+                seller.role == UserRole.official_seller
+                or bool(getattr(seller, "is_verified_seller", False))
+            )
+        )
         items.append(
             {
                 "id": listing.id,
@@ -637,17 +714,40 @@ async def search_by_image(
                 "city": listing.city,
                 "primary_image_url": primary,
                 "category_name": cat.name if cat else None,
+                "category_id": listing.category_id,
                 "attributes": listing.attributes,
-                "similarity": sim,
+                "similarity": score,
+                "match_tier": tier,
+                "is_official": is_official,
             }
         )
 
-    return {
-        "items": items,
-        "message": None
-        if items
-        else "Aucun article similaire pour cette photo. Cadrez un seul produit, lumière naturelle, fond neutre — SombaTeka IA analyse forme et couleurs.",
-    }
+    if not candidates:
+        msg = "Aucune annonce avec photo active pour comparer votre image."
+    elif loadable == 0:
+        logger.error(
+            "Image search: %d annonces avec clés image mais 0 octet chargeable (S3/local)",
+            len(candidates),
+        )
+        msg = (
+            "Impossible de lire les photos du catalogue pour comparer. "
+            "Réessayez dans quelques minutes ou contactez le support."
+        )
+    elif not items:
+        msg = (
+            "Aucun produit vraiment similaire dans le catalogue SombaTeka. "
+            "Utilisez une photo nette d’un article déjà publié, "
+            "ou un produit proche (même type, même couleur)."
+        )
+    elif items and float(items[0].get("similarity") or 0) < 0.68:
+        msg = (
+            f"{len(items)} résultat(s) proches. "
+            "Pour un match plus précis, cadrez un seul produit sur fond simple."
+        )
+    else:
+        msg = None
+
+    return {"items": items, "message": msg, "engine": "visual_v2"}
 
 
 @router.get("/{listing_id}/similar")
@@ -680,7 +780,7 @@ def similar_listings(listing_id: int, db: Session = Depends(get_db)) -> dict:
 
     source_imgs = sorted(source.images, key=lambda i: i.id) if source.images else []
     source_key = source_imgs[0].key if source_imgs else None
-    top = find_similar_to_listing(source, source_key, candidates, exclude_id=listing_id)
+    top = find_similar_to_listing(source, source_key, candidates, exclude_id=listing_id, db=db)
 
     items = []
     for sim, listing in top:
@@ -728,6 +828,7 @@ def get_listing(listing_id: int, db: Session = Depends(get_db)) -> ListingDetail
 
     seller = db.get(User, listing.seller_id)
     is_official = bool(seller and seller.role == UserRole.official_seller)
+    seller_fields = _seller_card_fields(seller, db)
 
     return ListingDetailPublic(
         id=listing.id,
@@ -744,7 +845,116 @@ def get_listing(listing_id: int, db: Session = Depends(get_db)) -> ListingDetail
         delivery_method=listing.delivery_method,
         delivery_method_label=delivery_method_label(listing.delivery_method),
         images=[ListingImagePublic(id=img.id, url=_public_upload_url(img.key)) for img in images_sorted],
+        seller_display_name=seller_fields["seller_display_name"],
+        seller_avatar_url=seller_fields["seller_avatar_url"],
+        seller_logo_url=seller_fields["seller_logo_url"],
+        seller_rating=seller_fields["seller_rating"],
+        seller_review_count=seller_fields["seller_review_count"],
+        seller_profile_public=seller_fields["seller_profile_public"],
     )
+
+
+@router.patch("/{listing_id}")
+def update_listing(
+    listing_id: int,
+    payload: ListingUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Met à jour titre, prix, attributs (stock/variantes) ou pause vitrine."""
+    listing = db.get(Listing, listing_id)
+    if not listing or listing.status == ListingStatus.deleted:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    if listing.seller_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not your listing")
+    if listing.status == ListingStatus.sold:
+        raise HTTPException(status_code=400, detail="Produit déjà vendu — impossible de modifier")
+
+    if payload.title is not None:
+        title = payload.title.strip()
+        if not title:
+            raise HTTPException(status_code=400, detail="Titre requis")
+        from app.services.moderation import assert_content_allowed
+
+        assert_content_allowed(title=title, description=payload.description or listing.description)
+        listing.title = title
+
+    if payload.description is not None:
+        description = payload.description.strip() if payload.description else None
+        from app.services.moderation import assert_content_allowed
+
+        assert_content_allowed(title=listing.title, description=description)
+        listing.description = description
+
+    if payload.price_cdf is not None:
+        listing.price_cdf = payload.price_cdf
+
+    if payload.attributes is not None:
+        raw = payload.attributes.strip()
+        if raw:
+            try:
+                parsed = json.loads(raw)
+                if not isinstance(parsed, dict):
+                    raise ValueError("attributes must be object")
+                variants = parsed.get("variants")
+                if variants is not None:
+                    if not isinstance(variants, list):
+                        raise HTTPException(status_code=400, detail="variants invalides")
+                    for v in variants:
+                        if not isinstance(v, dict):
+                            raise HTTPException(status_code=400, detail="variante invalide")
+                        stock = v.get("stock", 0)
+                        try:
+                            stock_i = int(stock)
+                        except (TypeError, ValueError):
+                            raise HTTPException(status_code=400, detail="stock invalide")
+                        if stock_i < 0 or stock_i > 1_000_000:
+                            raise HTTPException(status_code=400, detail="stock hors limites")
+                        v["stock"] = stock_i
+                listing.attributes = json.dumps(parsed, ensure_ascii=False)
+                # Prix catalogue = min des variantes si présent
+                if isinstance(variants, list) and variants:
+                    prices = []
+                    for v in variants:
+                        p = v.get("price_cdf")
+                        if p is not None:
+                            try:
+                                prices.append(int(p))
+                            except (TypeError, ValueError):
+                                pass
+                    if prices and payload.price_cdf is None:
+                        listing.price_cdf = min(prices)
+            except json.JSONDecodeError:
+                raise HTTPException(status_code=400, detail="attributes JSON invalide")
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+        else:
+            listing.attributes = None
+
+    if payload.status is not None:
+        if payload.status == "active":
+            listing.status = ListingStatus.active
+            listing.deleted_at = None
+            listing.auto_hidden_at = None
+            listing.auto_hidden_reason = None
+        else:
+            listing.status = ListingStatus.hidden
+
+    listing.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    if listing.status == ListingStatus.active:
+        notify_listing_updated(listing.id, listing.title)
+        sync_listing_async(listing.id)
+    elif listing.status in (ListingStatus.hidden, ListingStatus.sold, ListingStatus.deleted):
+        notify_listing_deleted(listing.id, listing.title)
+        sync_listing_async(listing.id, deleted=True)
+    return {
+        "ok": True,
+        "id": listing.id,
+        "status": listing.status.value if hasattr(listing.status, "value") else str(listing.status),
+        "price_cdf": listing.price_cdf,
+        "attributes": listing.attributes,
+    }
 
 
 @router.post("/{listing_id}/images")
@@ -782,6 +992,15 @@ async def upload_listing_image(
     db.add(img)
     try:
         db.commit()
+        db.refresh(img)
+        notify_listing_updated(listing.id, listing.title)
+        sync_listing_async(listing.id)
+        try:
+            from app.tasks.visual import index_listing_image_task
+
+            index_listing_image_task.delay(img.id)
+        except Exception:
+            pass
         resp = {"ok": True, "key": key, "url": _public_upload_url(key)}
         save_idempotency_response(
             db=db,
@@ -823,6 +1042,8 @@ def republish_listing(
     listing.created_at = now
     listing.updated_at = now
     db.commit()
+    notify_listing_updated(listing.id, listing.title)
+    sync_listing_async(listing.id)
     return {"ok": True, "created_at": now.isoformat()}
 
 
@@ -925,6 +1146,8 @@ def mark_listing_sold(
             db.add(seller_msg)
 
     db.commit()
+    notify_listing_deleted(listing.id, listing.title)
+    sync_listing_async(listing.id, deleted=True)
     return {"ok": True, "buyer_id": buyer_id, "review_message_id": review_message_id}
 
 
@@ -945,8 +1168,12 @@ def delete_listing(
         raise HTTPException(status_code=403, detail="Not your listing")
     from app.services.trash_service import move_listing_to_trash
 
+    title = listing.title
+    lid = listing.id
     move_listing_to_trash(db, listing, deleted_by=current_user)
     db.commit()
+    notify_listing_deleted(lid, title)
+    sync_listing_async(lid, deleted=True)
     return {"ok": True}
 
 

@@ -105,21 +105,27 @@ class _OfficialCatalogPublishScreenState extends State<OfficialCatalogPublishScr
 
   @override
   Widget build(BuildContext context) {
+    final desktop = MediaQuery.sizeOf(context).width >= 768;
     return Scaffold(
       backgroundColor: PremiumTheme.surface,
       body: SafeArea(
-        child: Column(
-          children: [
-            _header(),
-            _stepBar(),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: _step == 0 ? _boutiqueStep() : _productsStep(),
-              ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: desktop ? 880 : double.infinity),
+            child: Column(
+              children: [
+                _header(),
+                _stepBar(),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.symmetric(horizontal: desktop ? 28 : 20, vertical: 20),
+                    child: _step == 0 ? _boutiqueStep() : _productsStep(),
+                  ),
+                ),
+                _bottomBar(),
+              ],
             ),
-            _bottomBar(),
-          ],
+          ),
         ),
       ),
     );
@@ -133,8 +139,16 @@ class _OfficialCatalogPublishScreenState extends State<OfficialCatalogPublishScr
       child: Row(
         children: [
           IconButton(
-            onPressed: () => Navigator.pop(context),
+            tooltip: 'Retour',
+            onPressed: () {
+              if (Navigator.of(context).canPop()) {
+                Navigator.of(context).pop();
+              }
+            },
             icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+            style: IconButton.styleFrom(
+              backgroundColor: Colors.white.withValues(alpha: 0.12),
+            ),
           ),
           Expanded(
             child: Column(

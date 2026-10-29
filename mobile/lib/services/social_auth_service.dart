@@ -1,154 +1,354 @@
 import 'package:flutter/foundation.dart';
+
 import 'package:flutter/material.dart';
 
-import '../services/app_services.dart';
-import '../services/data_service.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
-/// Connexion Google / Apple (mode dev : API /auth/social/login).
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+
+
+
+import '../config/app_config.dart';
+
+import '../services/app_services.dart';
+
+import '../services/data_service.dart';
+import '../utils/friendly_error.dart';
+
+
+
+/// Connexion Google / Apple via SDK natifs + vérification id_token côté API.
+
 class SocialAuthService {
+
   SocialAuthService._();
+
   static final instance = SocialAuthService._();
 
-  Future<void> signInWithGoogle(BuildContext context) async {
-    await _signIn(
-      context,
-      provider: 'google',
-      title: 'Google',
-      icon: Icons.g_mobiledata_rounded,
-    );
-  }
 
-  Future<void> signInWithApple(BuildContext context) async {
-    await _signIn(
-      context,
-      provider: 'apple',
-      title: 'Apple',
-      icon: Icons.apple_rounded,
-    );
-  }
 
-  Future<void> _signIn(
-    BuildContext context, {
-    required String provider,
-    required String title,
-    required IconData icon,
-  }) async {
-    if (!context.mounted) return;
+  bool _statusLoaded = false;
 
-    final nameCtrl = TextEditingController();
-    final emailCtrl = TextEditingController();
+  bool _googleAvailable = false;
 
-    final ok = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        final bottom = MediaQuery.paddingOf(ctx).bottom;
-        return Padding(
-          padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + bottom),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                Icon(icon, size: 40),
-                const SizedBox(height: 12),
-                Text(
-                  'Connexion $title',
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  kIsWeb
-                      ? 'Sur iPhone : utilisez Safari. En dev, confirmez votre email.'
-                      : 'Confirmez pour créer ou ouvrir votre compte.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 13, color: Colors.grey[600], height: 1.4),
-                ),
-                const SizedBox(height: 20),
-                TextField(
-                  controller: nameCtrl,
-                  decoration: InputDecoration(
-                    labelText: 'Nom (optionnel)',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: emailCtrl,
-                  keyboardType: TextInputType.emailAddress,
-                  autofillHints: const [AutofillHints.email],
-                  decoration: InputDecoration(
-                    labelText: 'Email',
-                    hintText: provider == 'apple'
-                        ? 'votre@icloud.com'
-                        : 'vous@gmail.com',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: FilledButton(
-                    onPressed: () {
-                      final email = emailCtrl.text.trim();
-                      if (email.isEmpty || !email.contains('@')) {
-                        ScaffoldMessenger.of(ctx).showSnackBar(
-                          const SnackBar(content: Text('Entrez un email valide')),
-                        );
-                        return;
-                      }
-                      Navigator.pop(ctx, true);
-                    },
-                    child: const Text('Continuer', style: TextStyle(fontWeight: FontWeight.w700)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
+  bool _appleAvailable = false;
 
-    if (ok != true || !context.mounted) {
-      nameCtrl.dispose();
-      emailCtrl.dispose();
+
+
+  bool get googleAvailable => _googleAvailable;
+
+  bool get appleAvailable => _appleAvailable && !kIsWeb && (defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.android);
+
+
+
+  Future<void> refreshStatus() async {
+
+    if (!AppConfig.showGoogleLogin && !AppConfig.showAppleLogin) {
+
+      _googleAvailable = false;
+
+      _appleAvailable = false;
+
+      _statusLoaded = true;
+
       return;
+
     }
 
-    final email = emailCtrl.text.trim();
-    final displayName = nameCtrl.text.trim().isNotEmpty
-        ? nameCtrl.text.trim()
-        : email.split('@').first;
-    nameCtrl.dispose();
-    emailCtrl.dispose();
+    try {
 
-    final subject = '$provider:$email';
+      final r = await AppServices.instance.api.get<Map<String, dynamic>>('/auth/social/status');
 
-    await AppServices.instance.auth.socialLogin(
-      provider: provider,
-      subject: subject,
-      email: email,
-      displayName: displayName,
-    );
-    await DataService().refreshUser();
-    await DataService().refreshListings();
+      final data = r.data ?? {};
+
+      _googleAvailable = AppConfig.showGoogleLogin && data['google'] == true;
+
+      _appleAvailable = AppConfig.showAppleLogin && data['apple'] == true;
+
+    } catch (_) {
+
+      _googleAvailable = AppConfig.showGoogleLogin &&
+
+          (AppConfig.googleWebClientId.isNotEmpty || !kIsWeb);
+
+      _appleAvailable = AppConfig.showAppleLogin && AppConfig.appleSignInEnabled;
+
+    }
+
+    _statusLoaded = true;
+
   }
+
+
+
+  Future<void> ensureStatus() async {
+
+    if (!_statusLoaded) await refreshStatus();
+
+  }
+
+
+
+  GoogleSignIn _googleSignIn(String webClientId) {
+
+    return GoogleSignIn(
+
+      scopes: const ['openid', 'email', 'profile'],
+
+      clientId: kIsWeb && webClientId.isNotEmpty ? webClientId : null,
+
+      serverClientId: !kIsWeb && webClientId.isNotEmpty ? webClientId : null,
+
+    );
+
+  }
+
+
+
+  Future<void> signInWithGoogle(BuildContext context) async {
+
+    await ensureStatus();
+
+    if (!_googleAvailable) {
+
+      _unavailable(context, 'Google');
+
+      return;
+
+    }
+
+    try {
+
+      final webClientId = AppConfig.googleWebClientId;
+
+      final googleSignIn = _googleSignIn(webClientId);
+
+      final account = await googleSignIn.signIn();
+
+      if (account == null) return;
+
+
+
+      var auth = await account.authentication;
+
+      var idToken = auth.idToken;
+
+      var accessToken = auth.accessToken;
+
+
+
+      // PWA web : parfois id_token absent au 1er appel — retenter une fois.
+
+      if ((idToken == null || idToken.isEmpty) && kIsWeb) {
+
+        auth = await account.authentication;
+
+        idToken = auth.idToken;
+
+        accessToken ??= auth.accessToken;
+
+      }
+
+
+
+      if (idToken != null && idToken.isNotEmpty) {
+
+        await AppServices.instance.auth.socialLogin(
+
+          provider: 'google',
+
+          idToken: idToken,
+
+          email: account.email,
+
+          displayName: account.displayName,
+
+        );
+
+      } else if (accessToken != null && accessToken.isNotEmpty) {
+
+        await AppServices.instance.auth.socialLogin(
+
+          provider: 'google',
+
+          accessToken: accessToken,
+
+          email: account.email,
+
+          displayName: account.displayName,
+
+        );
+
+      } else {
+
+        throw Exception(
+
+          kIsWeb
+
+              ? 'Jeton Google manquant — activez People API dans Google Cloud, puis réessayez.'
+
+              : 'Jeton Google manquant — vérifiez google-services.json et SHA-256 release',
+
+        );
+
+      }
+
+
+
+      await DataService().refreshUser();
+
+      await DataService().refreshListings();
+
+    } catch (e) {
+
+      if (context.mounted) {
+
+        final msg = e.toString();
+
+        final hint = msg.contains('origin_mismatch') || msg.contains('400')
+
+            ? 'Ajoutez https://sombatekaonline.com dans Google Cloud Console → Credentials → Origines JavaScript autorisées (voir mobile/docs/GOOGLE_PWA_ORIGINS.md).'
+
+            : 'Connexion Google impossible : $e';
+
+        ScaffoldMessenger.of(context).showSnackBar(
+
+          SnackBar(content: Text(hint), duration: const Duration(seconds: 6)),
+
+        );
+
+      }
+
+      rethrow;
+
+    }
+
+  }
+
+
+
+  Future<void> signInWithApple(BuildContext context) async {
+
+    await ensureStatus();
+
+    if (!_appleAvailable) {
+
+      _unavailable(context, 'Apple');
+
+      return;
+
+    }
+
+    try {
+
+      final credential = await SignInWithApple.getAppleIDCredential(
+
+        scopes: [
+
+          AppleIDAuthorizationScopes.email,
+
+          AppleIDAuthorizationScopes.fullName,
+
+        ],
+
+      );
+
+      final idToken = credential.identityToken;
+
+      if (idToken == null || idToken.isEmpty) {
+
+        throw Exception('Jeton Apple manquant');
+
+      }
+
+      final parts = <String>[];
+
+      if (credential.givenName != null && credential.givenName!.isNotEmpty) {
+
+        parts.add(credential.givenName!);
+
+      }
+
+      if (credential.familyName != null && credential.familyName!.isNotEmpty) {
+
+        parts.add(credential.familyName!);
+
+      }
+
+      final displayName = parts.isEmpty ? null : parts.join(' ');
+
+      await AppServices.instance.auth.socialLogin(
+
+        provider: 'apple',
+
+        idToken: idToken,
+
+        email: credential.email,
+
+        displayName: displayName,
+
+      );
+
+      await DataService().refreshUser();
+
+      await DataService().refreshListings();
+
+    } on SignInWithAppleAuthorizationException catch (e) {
+
+      if (e.code == AuthorizationErrorCode.canceled) return;
+
+      if (context.mounted) {
+
+        ScaffoldMessenger.of(context).showSnackBar(
+
+          SnackBar(content: Text('Connexion Apple annulée ou refusée')),
+
+        );
+
+      }
+
+    } catch (e) {
+
+      if (context.mounted) {
+
+        ScaffoldMessenger.of(context).showSnackBar(
+
+          SnackBar(content: Text(friendlyError(e, fallback: 'Connexion Apple impossible. Réessayez.'))),
+
+        );
+
+      }
+
+      rethrow;
+
+    }
+
+  }
+
+
+
+  void _unavailable(BuildContext context, String provider) {
+
+    if (!context.mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+
+      SnackBar(
+
+        content: Text(
+
+          '$provider pas encore activé. Utilisez e-mail et mot de passe, '
+
+          'ou configurez OAuth (voir mobile/docs/SOCIAL_AUTH_SETUP.md).',
+
+        ),
+
+      ),
+
+    );
+
+  }
+
 }
+
+

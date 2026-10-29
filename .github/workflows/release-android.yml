@@ -5,10 +5,23 @@ on:
     inputs:
       api_url:
         description: API base URL
-        default: https://api.sombateka.cd
+        default: https://sombatekaonline.com
+      enable_social_auth:
+        description: Enable Google OAuth
+        default: "true"
+      google_web_client_id:
+        description: Google OAuth Web Client ID
+        default: "508328631175-2gpdu705sfbqa8anhj71m42tsf9dpk5p.apps.googleusercontent.com"
   push:
     tags:
       - "v*.*.*"
+  workflow_call:
+    inputs:
+      api_url:
+        description: API base URL
+        default: https://sombatekaonline.com
+        required: false
+        type: string
 
 jobs:
   build-aab:
@@ -51,7 +64,9 @@ jobs:
           dart run flutter_launcher_icons
           dart run flutter_native_splash:create
           flutter build appbundle --release \
-            --dart-define=ST_API_BASE_URL=${{ github.event.inputs.api_url || 'https://api.sombateka.cd' }} \
+            --dart-define=ST_API_BASE_URL=${{ github.event.inputs.api_url || 'https://sombatekaonline.com' }} \
+            --dart-define=ST_SOCIAL_AUTH_ENABLED=true \
+            --dart-define=ST_GOOGLE_WEB_CLIENT_ID=508328631175-2gpdu705sfbqa8anhj71m42tsf9dpk5p.apps.googleusercontent.com \
             --dart-define=SENTRY_DSN=${{ secrets.SENTRY_DSN_MOBILE }}
 
       - name: Upload AAB artifact

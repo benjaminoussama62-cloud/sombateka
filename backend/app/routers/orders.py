@@ -103,6 +103,11 @@ def create_order(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> OrderPublic:
+    if not settings.payments_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail="Paiement in-app bientôt disponible. Contactez le vendeur pour convenir du paiement.",
+        )
     listing = db.get(Listing, payload.listing_id)
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
@@ -185,6 +190,11 @@ async def pay_order(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> PaymentInitResponse:
+    if not settings.payments_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail="Paiement in-app bientôt disponible. Contactez le vendeur pour convenir du paiement.",
+        )
     order = db.scalar(
         select(Order).options(selectinload(Order.listing)).where(Order.id == order_id)
     )

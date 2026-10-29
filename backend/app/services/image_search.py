@@ -1,4 +1,4 @@
-"""Recherche visuelle SombaTeka — empreintes perceptuelles + correspondance ORB (IA légère)."""
+"""Recherche visuelle SombaTeka — empreintes perceptuelles + correspondance ORB."""
 
 from __future__ import annotations
 
@@ -24,20 +24,19 @@ except ImportError:
     cv2 = None  # type: ignore
     np = None  # type: ignore
 
-HASH_SIZE = 12
+HASH_SIZE = 16  # imagehash exige une puissance de 2 (8, 16, …) — 12 cassait toute la recherche
 MAX_RESULTS = 30
 MAX_CANDIDATES = 1200
 MAX_IMAGES_PER_LISTING = 12
+MIN_SHAPE = 0.30
+MIN_EDGE = 0.28
+MIN_COLOR = 0.22
+MIN_COMBINED = 0.36
+MIN_BEST_MATCH = 0.42
+RELATIVE_GAP = 0.14
+EXACT_PHASH = 0.82
 
-MIN_SHAPE = 0.48
-MIN_EDGE = 0.46
-MIN_COLOR = 0.35
-MIN_COMBINED = 0.42
-MIN_BEST_MATCH = 0.32
-RELATIVE_GAP = 0.22
-EXACT_PHASH = 0.88
-
-QUERY_CROP_RATIOS = (1.0, 0.92, 0.82, 0.72, 0.62)
+QUERY_CROP_RATIOS = (1.0, 0.92, 0.82, 0.72, 0.62, 0.52, 0.42)
 
 
 @dataclass
@@ -117,7 +116,8 @@ def query_fingerprints_multi(data: bytes) -> list[ImageFingerprints]:
 
 
 def _hash_similarity(a: imagehash.ImageHash, b: imagehash.ImageHash) -> float:
-    max_bits = float(a.hash.size ** 2)
+    # a.hash.size = nombre de bits (ex. 16×16 → 256). **2 gonflait tous les scores ≈ 1.0
+    max_bits = float(max(a.hash.size, b.hash.size, 1))
     dist = float(a - b)
     return max(0.0, 1.0 - dist / max_bits)
 
@@ -132,25 +132,32 @@ def combined_similarity(query: ImageFingerprints, candidate: ImageFingerprints) 
     shape = _hash_similarity(query.phash, candidate.phash)
     edge = _hash_similarity(query.dhash, candidate.dhash)
     wave = _hash_similarity(query.whash, candidate.whash)
+    if shape >= EXACT_PHASH:
+        return round(min(0.95, shape * 0.55 + edge * 0.25 + wave * 0.20), 3)
     palette_hash = _hash_similarity(query.colorhash, candidate.colorhash)
     palette_hist = _histogram_similarity(query.histogram, candidate.histogram)
-    color = palette_hash * 0.40 + palette_hist * 0.60
+    color = palette_hash * 0.35 + palette_hist * 0.65
     structure = (shape + edge + wave) / 3.0
 
-    if color < 0.26 and structure < 0.44:
+    # Objet partiel vs scène (ex. maillot seul ↔ photo avec maillot)
+    if color >= 0.40 and structure >= 0.18:
+        partial = color * 0.58 + structure * 0.22 + edge * 0.12 + wave * 0.08
+        if partial >= MIN_COMBINED:
+            return round(min(partial, 0.93), 3)
+
+    if color < 0.14 and structure < 0.28:
         return None
-    if shape < 0.34 and edge < 0.34 and wave < 0.34 and color < 0.32:
+    if shape < 0.20 and edge < 0.20 and wave < 0.20 and color < 0.18:
         return None
-    if color >= 0.68 and structure < 0.46:
+    if color < MIN_COLOR and structure < 0.32:
         return None
-    if color < MIN_COLOR and structure < 0.48:
+    if structure < 0.28 and color < MIN_COLOR + 0.02:
         return None
-    if structure < 0.48 and color < MIN_COLOR + 0.04:
-        return None
-    if shape < MIN_SHAPE - 0.12 and edge < MIN_EDGE - 0.12 and wave < MIN_EDGE - 0.12:
+    if shape < MIN_SHAPE - 0.10 and edge < MIN_EDGE - 0.10 and wave < MIN_EDGE - 0.10:
         return None
 
-    score = shape * 0.22 + edge * 0.18 + wave * 0.10 + color * 0.50
+    # Structure d’abord (Google-like) — la palette seule ne suffit plus
+    score = shape * 0.34 + edge * 0.28 + wave * 0.16 + color * 0.22
     if score < MIN_COMBINED:
         return None
 
@@ -159,13 +166,27 @@ def combined_similarity(query: ImageFingerprints, candidate: ImageFingerprints) 
             shape >= MIN_SHAPE,
             edge >= MIN_EDGE,
             wave >= MIN_EDGE - 0.04,
-            color >= MIN_COLOR,
+            color >= MIN_COLOR and structure >= 0.30,
         ]
     )
-    if strong_signals < 1 and score < MIN_COMBINED + 0.05:
+    if strong_signals < 1 and score < MIN_COMBINED + 0.04:
+        return None
+    if structure < 0.30 and color >= 0.50:
+        # Même palette, forme différente → rejeter
         return None
 
     return round(min(score, 0.95), 3)
+
+
+def raw_similarity(query: ImageFingerprints, candidate: ImageFingerprints) -> float:
+    """Score toujours défini (sans seuils) — pour le fallback soft-launch."""
+    shape = _hash_similarity(query.phash, candidate.phash)
+    edge = _hash_similarity(query.dhash, candidate.dhash)
+    wave = _hash_similarity(query.whash, candidate.whash)
+    palette_hash = _hash_similarity(query.colorhash, candidate.colorhash)
+    palette_hist = _histogram_similarity(query.histogram, candidate.histogram)
+    color = palette_hash * 0.35 + palette_hist * 0.65
+    return round(min(0.95, shape * 0.28 + edge * 0.22 + wave * 0.12 + color * 0.38), 3)
 
 
 def _best_query_match(query_fps: list[ImageFingerprints], candidate_fp: ImageFingerprints) -> float | None:
@@ -173,6 +194,15 @@ def _best_query_match(query_fps: list[ImageFingerprints], candidate_fp: ImageFin
     for q in query_fps:
         sim = combined_similarity(q, candidate_fp)
         if sim is not None and (best is None or sim > best):
+            best = sim
+    return best
+
+
+def _best_raw_query_match(query_fps: list[ImageFingerprints], candidate_fp: ImageFingerprints) -> float:
+    best = 0.0
+    for q in query_fps:
+        sim = raw_similarity(q, candidate_fp)
+        if sim > best:
             best = sim
     return best
 
@@ -190,8 +220,10 @@ def _orb_descriptors_cached(storage_key: str) -> tuple[bytes, bytes] | None:
         if img is None:
             return None
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        gray = cv2.resize(gray, (480, 480), interpolation=cv2.INTER_AREA)
-        orb = cv2.ORB_create(nfeatures=600)
+        gray = cv2.resize(gray, (512, 512), interpolation=cv2.INTER_AREA)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        gray = clahe.apply(gray)
+        orb = cv2.ORB_create(nfeatures=1000, scaleFactor=1.2, nlevels=8)
         _, des = orb.detectAndCompute(gray, None)
         if des is None or len(des) < 8:
             return None
@@ -210,8 +242,10 @@ def _orb_from_bytes(data: bytes) -> np.ndarray | None:
         if img is None:
             return None
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        gray = cv2.resize(gray, (480, 480), interpolation=cv2.INTER_AREA)
-        orb = cv2.ORB_create(nfeatures=600)
+        gray = cv2.resize(gray, (512, 512), interpolation=cv2.INTER_AREA)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        gray = clahe.apply(gray)
+        orb = cv2.ORB_create(nfeatures=1000, scaleFactor=1.2, nlevels=8)
         _, des = orb.detectAndCompute(gray, None)
         return des
     except Exception:
@@ -236,16 +270,18 @@ def _orb_similarity(query_des: np.ndarray | None, key: str) -> float | None:
         if len(pair) < 2:
             continue
         m, n = pair
-        if m.distance < 0.78 * n.distance:
+        if m.distance < 0.75 * n.distance:
             good += 1
-    denom = max(len(query_des), len(cand_des), 1)
+    # Ratio vs le plus petit descripteur = mieux pour match partiel (objet cadré)
+    denom = max(min(len(query_des), len(cand_des)), 1)
     ratio = good / denom
-    if ratio < 0.04:
+    if ratio < 0.05:
         return None
-    return round(min(0.92, ratio * 2.8), 3)
+    return round(min(0.94, ratio * 2.4), 3)
 
 
 def _filter_relative(scored: list[tuple[float, object]]) -> list[tuple[float, object]]:
+    """Ne garder que les vrais proches — jamais un dump du catalogue."""
     if not scored:
         return []
     scored.sort(key=lambda x: x[0], reverse=True)
@@ -253,8 +289,9 @@ def _filter_relative(scored: list[tuple[float, object]]) -> list[tuple[float, ob
     if best < MIN_BEST_MATCH:
         return []
     if best >= EXACT_PHASH:
-        return scored[: min(12, MAX_RESULTS)]
-    floor = max(MIN_COMBINED - 0.08, best - RELATIVE_GAP)
+        floor = max(MIN_BEST_MATCH, best - 0.10)
+        return [(s, item) for s, item in scored if s >= floor][: min(12, MAX_RESULTS)]
+    floor = max(MIN_BEST_MATCH, best - RELATIVE_GAP)
     return [(s, item) for s, item in scored if s >= floor][:MAX_RESULTS]
 
 
@@ -283,24 +320,29 @@ def best_similarity(
     image_keys: list[str],
     *,
     query_orb: np.ndarray | None = None,
+    strict: bool = True,
 ) -> float | None:
     best: float | None = None
     for key in image_keys[:MAX_IMAGES_PER_LISTING]:
         cand_fp = fingerprints_from_key(key)
         hash_score: float | None = None
         if cand_fp:
-            hash_score = _best_query_match(query_fps, cand_fp)
+            hash_score = (
+                _best_query_match(query_fps, cand_fp)
+                if strict
+                else _best_raw_query_match(query_fps, cand_fp)
+            )
         orb_score = _orb_similarity(query_orb, key) if query_orb is not None else None
 
         if hash_score is None and orb_score is None:
             continue
 
         if hash_score is not None and orb_score is not None:
-            fused = hash_score * 0.62 + orb_score * 0.38
+            fused = hash_score * 0.42 + orb_score * 0.58
         elif hash_score is not None:
             fused = hash_score
         else:
-            fused = (orb_score or 0) * 0.88
+            fused = (orb_score or 0) * 0.92
 
         if best is None or fused > best:
             best = round(fused, 3)
@@ -336,14 +378,14 @@ def find_similar_listings(
         if not keys:
             continue
         tried += 1
-        sim = best_similarity(query_fps, keys, query_orb=query_orb)
+        sim = best_similarity(query_fps, keys, query_orb=query_orb, strict=True)
         if sim is not None:
             scored.append((sim, listing))
 
-    if tried and not scored:
-        logger.warning(
-            "Image search: %d listings with images but 0 hash/ORB matches (check S3/URL load)",
+    filtered = _filter_relative(scored)
+    if tried and not filtered:
+        logger.info(
+            "Image search: %d listings scanned, 0 similar enough (precision-first)",
             tried,
         )
-
-    return _filter_relative(scored)
+    return filtered

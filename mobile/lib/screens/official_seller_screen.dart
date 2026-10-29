@@ -9,9 +9,8 @@ import 'package:image_picker/image_picker.dart';
 
 
 import '../services/data_service.dart';
-
+import '../config/app_config.dart';
 import '../theme/premium_theme.dart';
-
 import '../utils/constants.dart';
 
 
@@ -248,13 +247,20 @@ class _OfficialSellerScreenState extends State<OfficialSellerScreen> {
 
                   const SizedBox(height: 10),
 
-                  _benefit(Icons.payments_rounded, 'Paiement Mobile Money in-app'),
+                  _benefit(Icons.verified_rounded, 'Badge boutique officielle (KYC) — confiance maximale'),
 
-                  _benefit(Icons.inventory_2_rounded, 'Stock et commandes gérées'),
+                  _benefit(Icons.collections_bookmark_rounded, 'Catalogues illimités : tailles, couleurs, stock'),
 
-                  _benefit(Icons.verified_rounded, 'Badge boutique certifiée'),
+                  _benefit(Icons.campaign_rounded, 'Mise en avant prioritaire sur l\'accueil'),
 
-                  _benefit(Icons.schedule_rounded, 'Reversement vendeur T+1'),
+                  _benefit(Icons.chat_rounded, 'Messagerie directe avec vos clients'),
+
+                  _benefit(Icons.photo_library_rounded, 'Jusqu\'à 12 photos pro par produit'),
+
+                  _benefit(Icons.shield_rounded, 'Priorité modération & assistance SombaTeka'),
+
+                  if (AppConfig.paymentsEnabled)
+                    _benefit(Icons.payments_rounded, 'Paiement Mobile Money in-app'),
 
                   if (_hasPending && (_kyc?['documents'] as List?)?.isNotEmpty == true) ...[
 

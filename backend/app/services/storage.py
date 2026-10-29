@@ -58,8 +58,30 @@ def delete_local_key(key: str | None) -> None:
         path.unlink(missing_ok=True)
 
 
+def _load_s3_bytes(key: str) -> bytes | None:
+    """Télécharge directement depuis Spaces/S3 (prod — fichiers absents du disque local)."""
+    if not settings.s3_access_key or not settings.s3_bucket:
+        return None
+    clean = key.lstrip("/")
+    try:
+        import boto3
+
+        client = boto3.client(
+            "s3",
+            endpoint_url=settings.s3_endpoint_url or None,
+            aws_access_key_id=settings.s3_access_key,
+            aws_secret_access_key=settings.s3_secret_key,
+            region_name=settings.s3_region,
+        )
+        resp = client.get_object(Bucket=settings.s3_bucket, Key=clean)
+        body = resp["Body"].read()
+        return body if len(body) > 50 else None
+    except Exception:
+        return None
+
+
 def load_image_bytes(key: str) -> bytes | None:
-    """Charge une image listing (disque local ou URL publique S3/CDN)."""
+    """Charge une image listing (disque local, S3 direct, ou URL publique)."""
     if not key:
         return None
     path = UPLOAD_DIR.joinpath(*key.split("/"))
@@ -68,6 +90,11 @@ def load_image_bytes(key: str) -> bytes | None:
             return path.read_bytes()
         except OSError:
             pass
+
+    s3_data = _load_s3_bytes(key)
+    if s3_data:
+        return s3_data
+
     try:
         import httpx
 

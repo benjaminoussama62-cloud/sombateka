@@ -7,6 +7,9 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
+      iconTheme: const IconThemeData(
+        color: AppColors.textPrimary,
+      ),
       colorScheme: ColorScheme.fromSeed(
         seedColor: AppColors.primary,
         brightness: Brightness.light,

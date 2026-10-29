@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../utils/constants.dart';
 import '../utils/date_format.dart';
 import '../theme/premium_theme.dart';
+import '../widgets/st_safe_area.dart';
 
 class MessageBubble extends StatelessWidget {
   const MessageBubble({
@@ -179,8 +180,7 @@ class ChatInput extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: Colors.white,
-      child: SafeArea(
-        top: false,
+      child: StSafeBottom(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
           child: Row(

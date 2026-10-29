@@ -2,7 +2,24 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../theme/premium_theme.dart';
+
+/// Précharge les polices premium avant le premier rendu (évite flash / carré vide).
+Future<void> preloadPremiumFonts() async {
+  try {
+    await GoogleFonts.pendingFonts([
+      GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w500),
+      GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+      GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700),
+      GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w800),
+      GoogleFonts.inter(fontWeight: FontWeight.w500),
+      GoogleFonts.inter(fontWeight: FontWeight.w600),
+      GoogleFonts.inter(fontWeight: FontWeight.w700),
+      GoogleFonts.inter(fontWeight: FontWeight.w800),
+    ]);
+  } catch (_) {}
+}
 
 /// Sac blanc + étoile jaune + « SombaTeka » — sans image, avec animations.
 class SombaTekaWordmark extends StatefulWidget {
@@ -10,12 +27,15 @@ class SombaTekaWordmark extends StatefulWidget {
     super.key,
     this.iconSize = 64,
     this.fontSize = 34,
-    this.animate = true,
+    this.animate = false,
+    this.onDarkBackground = true,
   });
 
   final double iconSize;
   final double fontSize;
   final bool animate;
+  /// `true` = fond bleu/sombre (texte blanc). `false` = fond clair (texte navy).
+  final bool onDarkBackground;
 
   @override
   State<SombaTekaWordmark> createState() => _SombaTekaWordmarkState();
@@ -46,26 +66,27 @@ class _SombaTekaWordmarkState extends State<SombaTekaWordmark>
   @override
   Widget build(BuildContext context) {
     final gap = widget.iconSize * 0.18;
-    final bag = _buildBagIcon();
+    final titleColor = widget.onDarkBackground ? Colors.white : PremiumTheme.navy;
+    final bag = _buildBagIcon(strokeColor: widget.onDarkBackground ? Colors.white : PremiumTheme.navy);
     final title = Text(
       'SombaTeka',
       style: PremiumTheme.display.copyWith(
         fontSize: widget.fontSize,
         fontWeight: FontWeight.w800,
-        color: Colors.white,
+        color: titleColor,
         letterSpacing: -0.4,
         height: 1,
-        shadows: const [
-          Shadow(color: Color(0x40000000), blurRadius: 12, offset: Offset(0, 4)),
-        ],
+        fontFamilyFallback: const ['Segoe UI', 'system-ui', 'Roboto', 'sans-serif'],
+        shadows: widget.onDarkBackground
+            ? const [Shadow(color: Color(0x40000000), blurRadius: 12, offset: Offset(0, 4))]
+            : null,
       ),
     );
 
     final animatedTitle = widget.animate
         ? title
-            .animate(delay: 380.ms)
-            .fadeIn(duration: 550.ms, curve: Curves.easeOut)
-            .slideX(begin: 0.22, end: 0, duration: 650.ms, curve: Curves.easeOutCubic)
+            .animate()
+            .fadeIn(duration: 120.ms, curve: Curves.easeOut)
         : title;
 
     // FittedBox évite le débordement jaune/noir sur petits écrans (splash, auth).
@@ -84,7 +105,7 @@ class _SombaTekaWordmarkState extends State<SombaTekaWordmark>
     );
   }
 
-  Widget _buildBagIcon() {
+  Widget _buildBagIcon({required Color strokeColor}) {
     final size = widget.iconSize;
     final icon = SizedBox(
       width: size,
@@ -114,14 +135,14 @@ class _SombaTekaWordmarkState extends State<SombaTekaWordmark>
                 child: CustomPaint(
                   size: Size(size, size),
                   painter: _BagStarPainter(
-                    strokeColor: Colors.white,
+                    strokeColor: strokeColor,
                     starColor: PremiumTheme.gold,
                     starGlowColor: Color.lerp(
                       PremiumTheme.gold,
                       const Color(0xFFFFF3B0),
                       _starPulse.value * 0.35,
                     )!,
-                    strokeWidth: size * 0.055,
+                    strokeWidth: size * 0.065,
                     starScale: t,
                   ),
                 ),
@@ -134,15 +155,7 @@ class _SombaTekaWordmarkState extends State<SombaTekaWordmark>
 
     if (!widget.animate) return icon;
 
-    return icon
-        .animate()
-        .scale(
-          begin: const Offset(0.4, 0.4),
-          end: const Offset(1, 1),
-          duration: 750.ms,
-          curve: Curves.elasticOut,
-        )
-        .fadeIn(duration: 400.ms);
+    return icon.animate().fadeIn(duration: 120.ms, curve: Curves.easeOut);
   }
 }
 
@@ -166,36 +179,34 @@ class _BagStarPainter extends CustomPainter {
     final w = size.width;
     final h = size.height;
 
-    final stroke = Paint()
-      ..color = strokeColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    final handle = Path()
-      ..moveTo(w * 0.32, h * 0.22)
-      ..cubicTo(w * 0.32, h * 0.05, w * 0.68, h * 0.05, w * 0.68, h * 0.22);
-    canvas.drawPath(handle, stroke);
-
-    final bodyLeft = w * 0.16;
-    final bodyTop = h * 0.28;
-    final bodyW = w * 0.68;
-    final bodyH = h * 0.62;
-    final radius = w * 0.11;
-
-    canvas.drawLine(Offset(w * 0.32, h * 0.22), Offset(bodyLeft, bodyTop), stroke);
-    canvas.drawLine(Offset(w * 0.68, h * 0.22), Offset(bodyLeft + bodyW, bodyTop), stroke);
-
+    // Sac droit + anse + étoile sur le bord haut-droit — identique à l'icône Play Store
+    // (géométrie portée de scripts/generate_store_assets.py::_draw_brand_mark).
     final body = RRect.fromRectAndRadius(
-      Rect.fromLTWH(bodyLeft, bodyTop, bodyW, bodyH),
-      Radius.circular(radius),
+      Rect.fromLTWH(w * 0.12, h * 0.239, w * 0.76, h * 0.723),
+      Radius.circular(w * 0.087),
     );
-    canvas.drawRRect(body, stroke);
+    canvas.drawRRect(
+      body,
+      Paint()
+        ..color = strokeColor
+        ..style = PaintingStyle.fill,
+    );
 
-    final center = Offset(w * 0.5, h * 0.57);
-    final outer = w * 0.19 * starScale;
-    final inner = w * 0.075 * starScale;
+    canvas.drawArc(
+      Rect.fromLTRB(w * 0.229, h * 0.058, w * 0.771, h * 0.383),
+      200 * math.pi / 180,
+      140 * math.pi / 180,
+      false,
+      Paint()
+        ..color = strokeColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth
+        ..strokeCap = StrokeCap.round,
+    );
+
+    final center = Offset(w * 0.7356, h * 0.311);
+    final outer = w * 0.130 * starScale;
+    final inner = w * 0.058 * starScale;
 
     canvas.drawPath(
       _starPath(center: center, outerRadius: outer * 1.35, innerRadius: inner * 1.35),

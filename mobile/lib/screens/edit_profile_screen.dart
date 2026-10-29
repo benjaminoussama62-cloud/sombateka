@@ -7,6 +7,7 @@ import '../services/data_service.dart';
 import '../theme/premium_theme.dart';
 import '../utils/constants.dart';
 import '../widgets/user_avatar.dart';
+import '../utils/friendly_error.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -17,11 +18,13 @@ class EditProfileScreen extends StatefulWidget {
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
   final _name = TextEditingController();
+  final _bio = TextEditingController();
   final _picker = ImagePicker();
   final _data = DataService();
   bool _loading = true;
   bool _saving = false;
   bool _avatarBusy = false;
+  int _bioLockedDays = 0;
 
   @override
   void initState() {
@@ -37,14 +40,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     } catch (_) {}
     final u = _data.currentUser;
     _name.text = u?['display_name']?.toString() ?? u?['name']?.toString() ?? '';
+    _bio.text = u?['profile_bio']?.toString() ?? '';
+    _bioLockedDays = (u?['profile_bio_editable_in_days'] as num?)?.toInt() ?? 0;
     if (mounted) setState(() => _loading = false);
   }
 
   @override
   void dispose() {
     _name.dispose();
+    _bio.dispose();
     super.dispose();
   }
+
+  bool get _bioEditable => _bioLockedDays <= 0;
 
   @override
   Widget build(BuildContext context) {
@@ -55,7 +63,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
 
     final u = _data.currentUser;
-    final phone = u?['phone_e164']?.toString() ?? u?['phone']?.toString() ?? '—';
+    final phone = _data.displayPhone(u);
+    final email = u?['email']?.toString();
     final role = u?['role']?.toString() ?? 'user';
     final isOfficial = role.contains('official') || u?['is_verified_seller'] == true;
     final displayName = _data.profileDisplayName(u);
@@ -94,13 +103,34 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     onPressed: _avatarBusy ? null : _showAvatarOptions,
                     child: const Text('Modifier la photo de profil'),
                   ),
-                  Text(phone, style: PremiumTheme.body.copyWith(fontSize: 13)),
+                  if (email != null && email.isNotEmpty)
+                    Text(email, style: PremiumTheme.body.copyWith(fontSize: 13, color: PremiumTheme.blue)),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        phone ?? 'Téléphone : à ajouter',
+                        style: PremiumTheme.body.copyWith(
+                          fontSize: 13,
+                          color: phone == null ? PremiumTheme.textMuted : null,
+                        ),
+                      ),
+                      if (phone == null) ...[
+                        const SizedBox(width: 8),
+                        TextButton(
+                          onPressed: _showAddPhoneSheet,
+                          child: const Text('Ajouter'),
+                        ),
+                      ],
+                    ],
+                  ),
                   const SizedBox(height: 6),
                   _badge(
                     isOfficial ? 'Vendeur officiel' : 'Compte particulier',
                     isOfficial ? PremiumTheme.gold : PremiumTheme.blue,
                   ),
-                  if (u?['is_phone_verified'] == true) ...[
+                  if (u?['is_phone_verified'] == true && phone != null) ...[
                     const SizedBox(height: 8),
                     _badge('Téléphone vérifié', PremiumTheme.emerald),
                   ],
@@ -122,6 +152,39 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   ),
                   const SizedBox(height: 16),
                   TextField(
+                    controller: _bio,
+                    enabled: _bioEditable,
+                    maxLength: 500,
+                    maxLines: 4,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: InputDecoration(
+                      labelText: 'Description (optionnelle)',
+                      hintText: 'Présentez-vous en quelques mots…',
+                      filled: true,
+                      fillColor: _bioEditable ? Colors.white : const Color(0xFFF3F4F6),
+                      border: OutlineInputBorder(borderRadius: PremiumTheme.radiusMd),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: PremiumTheme.radiusMd,
+                        borderSide: const BorderSide(color: PremiumTheme.blue, width: 2),
+                      ),
+                      counterText: '',
+                    ),
+                  ),
+                  if (!_bioEditable) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'Description modifiable dans $_bioLockedDays jour(s).',
+                      style: PremiumTheme.body.copyWith(fontSize: 12, color: PremiumTheme.textMuted),
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'Visible sur votre profil public. Modifiable une fois par semaine après enregistrement.',
+                      style: PremiumTheme.body.copyWith(fontSize: 12, color: PremiumTheme.textMuted),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  TextField(
                     enabled: false,
                     controller: TextEditingController(text: phone),
                     decoration: InputDecoration(
@@ -134,7 +197,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'Le numéro est lié à votre compte pour la sécurité OTP.',
+                    'Le numéro est requis pour les contacts vendeur et la vérification du compte.',
                     style: PremiumTheme.body.copyWith(fontSize: 12, color: PremiumTheme.textMuted),
                   ),
                 ],
@@ -230,11 +293,86 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur photo: $e'), backgroundColor: AppColors.danger),
+        SnackBar(content: Text(friendlyError(e, fallback: 'Photo impossible à charger. Réessayez.')), backgroundColor: AppColors.danger),
       );
     } finally {
       if (mounted) setState(() => _avatarBusy = false);
     }
+  }
+
+  Future<void> _showAddPhoneSheet() async {
+    final phoneCtrl = TextEditingController(text: '+243');
+    var busy = false;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setSheet) {
+            Future<void> savePhone() async {
+              setSheet(() => busy = true);
+              try {
+                final phone = DataService.normalizePhoneE164(phoneCtrl.text.trim());
+                await _data.updateProfilePhone(phone);
+                if (context.mounted) {
+                  Navigator.pop(context);
+                  setState(() {});
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Numéro enregistré'),
+                      backgroundColor: PremiumTheme.emerald,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('$e'), backgroundColor: AppColors.danger),
+                  );
+                }
+              } finally {
+                setSheet(() => busy = false);
+              }
+            }
+
+            return Padding(
+              padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + MediaQuery.viewInsetsOf(context).bottom),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('Ajouter un numéro', style: PremiumTheme.h1.copyWith(fontSize: 18)),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Votre numéro pour être joint par les acheteurs. Modifiable après 14 jours.',
+                    style: PremiumTheme.body.copyWith(fontSize: 13),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: phoneCtrl,
+                    keyboardType: TextInputType.phone,
+                    decoration: InputDecoration(
+                      labelText: 'Numéro (+243…)',
+                      border: OutlineInputBorder(borderRadius: PremiumTheme.radiusMd),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: busy ? null : savePhone,
+                    child: Text(busy ? 'Enregistrement…' : 'Enregistrer le numéro'),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+    phoneCtrl.dispose();
   }
 
   Future<void> _deleteAvatar() async {
@@ -249,7 +387,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur: $e'), backgroundColor: AppColors.danger),
+        SnackBar(content: Text(friendlyError(e)), backgroundColor: AppColors.danger),
       );
     } finally {
       if (mounted) setState(() => _avatarBusy = false);
@@ -299,7 +437,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
     setState(() => _saving = true);
     try {
-      await _data.updateProfile(displayName: name);
+      await _data.updateProfile(
+        displayName: name,
+        profileBio: _bioEditable ? _bio.text.trim() : null,
+      );
       if (!mounted) return;
       HapticFeedback.mediumImpact();
       ScaffoldMessenger.of(context).showSnackBar(
@@ -309,7 +450,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur: $e'), backgroundColor: AppColors.danger),
+        SnackBar(content: Text(friendlyError(e)), backgroundColor: AppColors.danger),
       );
     } finally {
       if (mounted) setState(() => _saving = false);

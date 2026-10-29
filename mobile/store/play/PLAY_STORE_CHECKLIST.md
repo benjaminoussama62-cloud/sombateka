@@ -14,6 +14,8 @@
 - [ ] Firebase réel : voir `docs/FIREBASE_SETUP.md` + `scripts/setup-firebase.ps1`
 - [ ] SMS prod : voir `../../backend/docs/SMS_SETUP.md`
 - [ ] Clés Mobile Money : voir `../../backend/docs/PAYMENTS_RUNBOOK.md`
+- [ ] Google/Apple Sign-In (optionnel) : `../../mobile/docs/SOCIAL_AUTH_SETUP.md`
+- [ ] Guide lancement ce soir : `LANCEMENT_PLAY_STORE.md`
 
 ## Assets (generes automatiquement)
 

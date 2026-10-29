@@ -318,3 +318,43 @@ body.login-page {
   font-size: 0.78rem;
   margin-bottom: 4px;
 }
+
+.field.honeypot {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+
+.login-qr {
+  display: flex;
+  justify-content: center;
+  margin: 12px 0 16px;
+  padding: 12px;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.login-2fa-hint {
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin: 0 0 8px;
+  line-height: 1.4;
+}
+
+.login-2fa-secret {
+  font-size: 0.8rem;
+  color: var(--muted);
+  word-break: break-all;
+  margin: 0 0 16px;
+}
+
+.login-2fa-secret code {
+  font-weight: 700;
+  color: #0f172a;
+}

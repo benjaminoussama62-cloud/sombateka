@@ -12,13 +12,78 @@ from app.settings import settings
 logger = logging.getLogger(__name__)
 
 
-def _ensure_column(table: str, column: str, ddl: str) -> None:
+def _schedule_visual_backfill() -> None:
+    """Indexe les images catalogue en arrière-plan (recherche par photo)."""
+    import threading
+
+    def _run() -> None:
+        try:
+            from sqlalchemy import func, select
+
+            from app.models import ListingImage, ListingImageFeature
+            from app.services.visual_index import index_listing_image
+
+            db = SessionLocal()
+            try:
+                from app.services.visual_index import feature_is_current
+
+                total = db.scalar(select(func.count()).select_from(ListingImage)) or 0
+                imgs = db.scalars(select(ListingImage).order_by(ListingImage.id.asc()).limit(500)).all()
+                done = 0
+                for img in imgs:
+                    feat = db.get(ListingImageFeature, img.id)
+                    if feature_is_current(feat):
+                        continue
+                    if index_listing_image(db, img.id):
+                        done += 1
+                logger.info(
+                    "Visual backfill: reindexed %d/%d images (total catalogue=%d)",
+                    done,
+                    len(imgs),
+                    total,
+                )
+            finally:
+                db.close()
+        except Exception as e:
+            logger.warning("Visual backfill skipped: %s", e)
+
+    threading.Thread(target=_run, name="visual-backfill", daemon=True).start()
+
+
+def ensure_register_schema() -> None:
+    """Colonnes requises pour POST /auth/register (idempotent)."""
+    for column, ddl, pg_ddl in (
+        ("password_hash", "VARCHAR(255)", None),
+        ("official_name", "VARCHAR(120)", None),
+        ("official_logo_key", "VARCHAR(255)", None),
+        ("avatar_key", "VARCHAR(255)", None),
+        ("email", "VARCHAR(255)", None),
+        ("email_verified", "BOOLEAN DEFAULT 0", "BOOLEAN DEFAULT false"),
+        ("admin_password_hash", "VARCHAR(255)", None),
+        ("privacy_profile_public", "BOOLEAN DEFAULT 1", "BOOLEAN DEFAULT true"),
+        ("privacy_show_phone", "BOOLEAN DEFAULT 0", "BOOLEAN DEFAULT false"),
+        ("privacy_allow_messages", "BOOLEAN DEFAULT 1", "BOOLEAN DEFAULT true"),
+    ):
+        _ensure_column("users", column, ddl, pg_ddl=pg_ddl)
+    if engine.dialect.name == "postgresql":
+        _ensure_column("users", "phone_linked_at", "TIMESTAMPTZ")
+    else:
+        _ensure_column("users", "phone_linked_at", "DATETIME")
+
+
+def _ensure_column(table: str, column: str, ddl: str, *, pg_ddl: str | None = None) -> None:
+    col_type = pg_ddl if pg_ddl and engine.dialect.name == "postgresql" else ddl
     try:
         with engine.connect() as conn:
-            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+            if engine.dialect.name == "postgresql":
+                conn.execute(
+                    text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {col_type}")
+                )
+            else:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
             conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Schema patch %s.%s failed: %s", table, column, exc)
 
 
 def _ensure_user_avatar_column() -> None:
@@ -27,7 +92,7 @@ def _ensure_user_avatar_column() -> None:
 
 def _ensure_user_email_columns() -> None:
     _ensure_column("users", "email", "VARCHAR(255)")
-    _ensure_column("users", "email_verified", "BOOLEAN DEFAULT 0")
+    _ensure_column("users", "email_verified", "BOOLEAN DEFAULT 0", pg_ddl="BOOLEAN DEFAULT false")
 
 
 def _migrate_order_statuses() -> None:
@@ -42,6 +107,8 @@ def _migrate_order_statuses() -> None:
 
 def _ensure_schema_patches() -> None:
     _ensure_user_email_columns()
+    _ensure_column("users", "official_name", "VARCHAR(120)")
+    _ensure_column("users", "official_logo_key", "VARCHAR(255)")
     _ensure_column("listings", "delivery_method", "VARCHAR(32)")
     _ensure_column("listings", "auto_hidden_at", "DATETIME")
     _ensure_column("listings", "auto_hidden_reason", "VARCHAR(64)")
@@ -54,10 +121,20 @@ def _ensure_schema_patches() -> None:
     ):
         _ensure_column("orders", col, ddl)
     _migrate_order_statuses()
-    _ensure_column("users", "privacy_profile_public", "BOOLEAN DEFAULT 1")
-    _ensure_column("users", "privacy_show_phone", "BOOLEAN DEFAULT 0")
-    _ensure_column("users", "privacy_allow_messages", "BOOLEAN DEFAULT 1")
+    _ensure_column("users", "privacy_profile_public", "BOOLEAN DEFAULT 1", pg_ddl="BOOLEAN DEFAULT true")
+    _ensure_column("users", "privacy_show_phone", "BOOLEAN DEFAULT 0", pg_ddl="BOOLEAN DEFAULT false")
+    _ensure_column("users", "privacy_allow_messages", "BOOLEAN DEFAULT 1", pg_ddl="BOOLEAN DEFAULT true")
     _ensure_column("users", "admin_password_hash", "VARCHAR(255)")
+    _ensure_column("users", "password_hash", "VARCHAR(255)")
+    _ensure_column("users", "profile_bio", "TEXT")
+    if engine.dialect.name == "postgresql":
+        _ensure_column("users", "profile_bio_updated_at", "TIMESTAMPTZ")
+    else:
+        _ensure_column("users", "profile_bio_updated_at", "DATETIME")
+    if engine.dialect.name == "postgresql":
+        _ensure_column("users", "phone_linked_at", "TIMESTAMPTZ")
+    else:
+        _ensure_column("users", "phone_linked_at", "DATETIME")
     _ensure_column("cart_items", "variant_size", "VARCHAR(32)")
     _ensure_column("cart_items", "variant_color", "VARCHAR(64)")
     _ensure_column("listings", "buyer_id", "INTEGER")
@@ -77,7 +154,7 @@ def _ensure_schema_patches() -> None:
 
 
 def _ensure_fashion_categories(db) -> None:
-    """Ajoute les catégories mode détaillées si absentes."""
+    """Ajoute les catégories mode détaillées si absentes + peupler les slugs SEO."""
     names = [
         ("Mode & Vêtements", "shirt"),
         ("Chaussures", "shoe"),
@@ -96,6 +173,14 @@ def _ensure_fashion_categories(db) -> None:
     for name, icon in names:
         if not db.scalar(select(Category).where(Category.name == name)):
             db.add(Category(name=name, icon_key=icon))
+    db.commit()
+    # Slugs SEO pour toutes les catégories (pages /categorie/{slug})
+    from app.services.seo_catalog import slugify
+
+    for cat in db.scalars(select(Category)).all():
+        want = slugify(cat.name, 80)
+        if not cat.slug or cat.slug != want:
+            cat.slug = want
     db.commit()
 
 
@@ -157,13 +242,15 @@ def _ensure_team_support_user() -> None:
 
 def init_database() -> None:
     ensure_userrole_super_admin()
+    ensure_register_schema()
     _ensure_team_support_user()
+    # Patches idempotents — aussi en production (auto_create_tables peut être false).
+    _ensure_user_avatar_column()
+    _ensure_schema_patches()
     if settings.auto_create_tables:
         from app.models import OrderDispute  # noqa: F401 — enregistre la table
 
         Base.metadata.create_all(bind=engine)
-        _ensure_user_avatar_column()
-        _ensure_schema_patches()
         logger.info("Database tables ensured")
 
     _purge_demo_listings()
@@ -178,6 +265,7 @@ def init_database() -> None:
         db.close()
 
     if not settings.seed_dev_data or settings.is_production:
+        _schedule_visual_backfill()
         return
 
     db = SessionLocal()

@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field
 
 class OtpSendRequest(BaseModel):
     phone_e164: str = Field(..., examples=["+243812345678"])
+    purpose: Literal["login", "register"] = "login"
+    display_name: str | None = Field(default=None, max_length=80)
 
 
 class OtpSendResponse(BaseModel):
@@ -19,6 +21,7 @@ class OtpSendResponse(BaseModel):
 class EmailOtpSendRequest(BaseModel):
     email: str = Field(..., examples=["user@example.com"])
     display_name: str | None = Field(default=None, max_length=80)
+    purpose: Literal["login", "register", "reset_password", "verify_email"] = "login"
 
 
 class EmailOtpVerifyRequest(BaseModel):
@@ -26,7 +29,38 @@ class EmailOtpVerifyRequest(BaseModel):
     code: str
 
 
+class RegisterRequest(BaseModel):
+    email: str = Field(..., examples=["user@example.com"])
+    password: str = Field(..., min_length=8, max_length=128)
+    phone_e164: str = Field(..., examples=["+243812345678"])
+    display_name: str = Field(..., min_length=1, max_length=80)
+
+
+class PasswordForgotRequest(BaseModel):
+    email: str = Field(..., examples=["user@example.com"])
+
+
+class PasswordResetRequest(BaseModel):
+    email: str = Field(..., examples=["user@example.com"])
+    code: str = Field(..., min_length=4, max_length=8)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(..., examples=["user@example.com"])
+    password: str = Field(..., min_length=1, max_length=128)
+
+
 class OtpVerifyRequest(BaseModel):
+    phone_e164: str
+    code: str
+
+
+class PhoneLinkSendRequest(BaseModel):
+    phone_e164: str = Field(..., examples=["+243812345678"])
+
+
+class PhoneLinkVerifyRequest(BaseModel):
     phone_e164: str
     code: str
 
@@ -38,9 +72,13 @@ class TokenResponse(BaseModel):
 
 class UserPublic(BaseModel):
     id: int
-    phone_e164: str
+    phone_e164: str | None = None
+    needs_phone: bool = False
+    needs_password: bool = False
+    needs_account_setup: bool = False
     email: str | None = None
     email_verified: bool = False
+    account_verified: bool = False
     role: str
     display_name: str | None = None
     official_name: str | None = None
@@ -53,6 +91,9 @@ class UserPublic(BaseModel):
     privacy_profile_public: bool = True
     privacy_show_phone: bool = False
     privacy_allow_messages: bool = True
+    profile_bio: str | None = None
+    profile_bio_updated_at: str | None = None
+    profile_bio_editable_in_days: int | None = None
 
 
 class MeResponse(BaseModel):
@@ -61,7 +102,9 @@ class MeResponse(BaseModel):
 
 class SocialLoginRequest(BaseModel):
     provider: Literal["google", "apple"]
-    subject: str = Field(..., min_length=3, max_length=128)
+    id_token: str | None = Field(default=None, min_length=20)
+    access_token: str | None = Field(default=None, min_length=20)
+    subject: str | None = Field(default=None, min_length=3, max_length=128)
     email: str | None = None
     display_name: str | None = None
 
@@ -69,6 +112,31 @@ class SocialLoginRequest(BaseModel):
 class DevLoginRequest(BaseModel):
     phone_e164: str = Field(..., examples=["+243812345678"])
     password: str = Field(..., min_length=4, max_length=128)
+
+
+
+
+class AdminLoginResponse(BaseModel):
+    """Réponse login admin — 2FA obligatoire."""
+
+    status: Literal["ok", "needs_2fa", "needs_2fa_setup"]
+    access_token: str | None = None
+    token_type: str = "bearer"
+    challenge_token: str | None = None
+    otpauth_uri: str | None = None
+    totp_secret: str | None = None
+    qr_data_url: str | None = None
+    message: str | None = None
+
+
+class Admin2FAVerifyRequest(BaseModel):
+    challenge_token: str = Field(..., min_length=20)
+    code: str = Field(..., min_length=6, max_length=12)
+
+
+class Admin2FAConfirmSetupRequest(BaseModel):
+    challenge_token: str = Field(..., min_length=20)
+    code: str = Field(..., min_length=6, max_length=12)
 
 
 class CategoryPublic(BaseModel):
@@ -136,6 +204,20 @@ class ListingCreateRequest(BaseModel):
     )
 
 
+class ListingUpdateRequest(BaseModel):
+    """Mise à jour partielle — stock / catalogue boutique officielle."""
+
+    title: str | None = Field(default=None, min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=8000)
+    price_cdf: int | None = Field(default=None, ge=0, le=10_000_000_000)
+    attributes: str | None = None
+    status: str | None = Field(
+        default=None,
+        pattern="^(active|hidden)$",
+        description="active = en vitrine, hidden = pause temporaire",
+    )
+
+
 class ListingImagePublic(BaseModel):
     id: int
     url: str
@@ -159,6 +241,14 @@ class ListingDetailPublic(ListingPublic):
     attributes: str | None = None
     delivery_method: str | None = None
     delivery_method_label: str | None = None
+    seller_display_name: str | None = None
+    seller_avatar_url: str | None = None
+    seller_logo_url: str | None = None
+    seller_rating: float = 0.0
+    seller_review_count: int = 0
+    seller_profile_public: bool = True
+    seller_email_verified: bool = False
+    seller_account_verified: bool = False
 
 
 class MessageCreateRequest(BaseModel):
@@ -191,6 +281,8 @@ class ConversationPublic(BaseModel):
     listing_image_url: str | None = None
     is_official_peer: bool = False
     is_team_peer: bool = False
+    peer_email_verified: bool = False
+    peer_account_verified: bool = False
     last_message: str | None
     last_at: datetime | None
     unread_count: int

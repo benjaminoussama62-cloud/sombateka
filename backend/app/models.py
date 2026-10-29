@@ -16,6 +16,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
+from app.utils.message_crypto import EncryptedText
 
 
 def _utcnow() -> datetime:
@@ -126,12 +127,19 @@ class User(Base):
     official_logo_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     avatar_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_phone_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    phone_linked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_verified_seller: Mapped[bool] = mapped_column(Boolean, default=False)
     is_banned: Mapped[bool] = mapped_column(Boolean, default=False)
     admin_password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    admin_totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    admin_totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    admin_totp_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     privacy_profile_public: Mapped[bool] = mapped_column(Boolean, default=True)
     privacy_show_phone: Mapped[bool] = mapped_column(Boolean, default=False)
     privacy_allow_messages: Mapped[bool] = mapped_column(Boolean, default=True)
+    profile_bio: Mapped[str | None] = mapped_column(Text, nullable=True)
+    profile_bio_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
@@ -226,6 +234,28 @@ class ListingImage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     listing: Mapped["Listing"] = relationship(back_populates="images")
+    visual_feature: Mapped["ListingImageFeature | None"] = relationship(
+        back_populates="listing_image",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+
+class ListingImageFeature(Base):
+    """Empreinte visuelle persistée (retrieval vectoriel recherche par photo)."""
+
+    __tablename__ = "listing_image_features"
+
+    listing_image_id: Mapped[int] = mapped_column(
+        ForeignKey("listing_images.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    vector_json: Mapped[str] = mapped_column(Text)
+    dominant_colors: Mapped[str | None] = mapped_column(Text, nullable=True)
+    focus_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    listing_image: Mapped["ListingImage"] = relationship(back_populates="visual_feature")
 
 
 class Message(Base):
@@ -235,7 +265,7 @@ class Message(Base):
     sender_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     recipient_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     listing_id: Mapped[int | None] = mapped_column(ForeignKey("listings.id"), nullable=True)
-    content: Mapped[str] = mapped_column(Text)
+    content: Mapped[str] = mapped_column(EncryptedText)
     kind: Mapped[str] = mapped_column(String(32), default="text")
     is_read: Mapped[bool] = mapped_column(Boolean, default=False)
     deleted_by_sender: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -542,7 +572,7 @@ class AdminChatMessage(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     room_id: Mapped[int] = mapped_column(ForeignKey("admin_chat_rooms.id"), index=True)
     sender_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    content: Mapped[str] = mapped_column(Text)
+    content: Mapped[str] = mapped_column(EncryptedText)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
 
     room: Mapped["AdminChatRoom"] = relationship(back_populates="messages")

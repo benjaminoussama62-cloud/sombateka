@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../theme/premium_theme.dart';
 import '../utils/listing_attributes.dart';
+import '../utils/listing_utils.dart';
 import '../utils/rdc_locations.dart';
 import 'location_picker_fields.dart';
 
 /// Filtres avancés SombaTeka (catégorie, avis, couleur, localisation RDC…).
 class MarketplaceFilterState {
+  static const double defaultMaxPrice = 10000000;
+  static const double sliderMaxPrice = 5000000;
+  static const double sliderStep = 25000;
+
   String category = 'Toutes';
   int? categoryId;
   String? size;
@@ -21,7 +27,9 @@ class MarketplaceFilterState {
   int? minStars;
   bool officialOnly = false;
   double minPrice = 0;
-  double maxPrice = 10000000;
+  double maxPrice = defaultMaxPrice;
+
+  bool get hasPriceFilter => minPrice > 0 || maxPrice < defaultMaxPrice;
 
   int get activeCount {
     var n = 0;
@@ -37,7 +45,7 @@ class MarketplaceFilterState {
     if (province != null) n++;
     if (minStars != null) n++;
     if (officialOnly) n++;
-    if (minPrice > 0 || maxPrice < 10000000) n++;
+    if (hasPriceFilter) n++;
     return n;
   }
 
@@ -56,7 +64,7 @@ class MarketplaceFilterState {
     minStars = null;
     officialOnly = false;
     minPrice = 0;
-    maxPrice = 10000000;
+    maxPrice = defaultMaxPrice;
   }
 }
 
@@ -109,6 +117,17 @@ class _MarketplaceFilterSheetState extends State<_MarketplaceFilterSheet> {
   late double _minPrice;
   late double _maxPrice;
   final _brandCtrl = TextEditingController();
+  final _minPriceCtrl = TextEditingController();
+  final _maxPriceCtrl = TextEditingController();
+
+  static const _pricePresets = <({String label, double min, double max})>[
+    (label: 'Tous les prix', min: 0, max: MarketplaceFilterState.defaultMaxPrice),
+    (label: 'Jusqu\'à 50K', min: 0, max: 50000),
+    (label: '50K – 200K', min: 50000, max: 200000),
+    (label: '200K – 1M', min: 200000, max: 1000000),
+    (label: '1M – 5M', min: 1000000, max: 5000000),
+    (label: '5M et +', min: 5000000, max: MarketplaceFilterState.defaultMaxPrice),
+  ];
 
   @override
   void initState() {
@@ -128,15 +147,68 @@ class _MarketplaceFilterSheetState extends State<_MarketplaceFilterSheet> {
     _minPrice = widget.initial.minPrice;
     _maxPrice = widget.initial.maxPrice;
     _brandCtrl.text = widget.initial.brand ?? '';
+    _syncPriceFieldsFromSlider();
+  }
+
+  void _syncPriceFieldsFromSlider() {
+    _minPriceCtrl.text = _minPrice <= 0 ? '' : _minPrice.round().toString();
+    if (_maxPrice >= MarketplaceFilterState.defaultMaxPrice) {
+      _maxPriceCtrl.text = '';
+    } else {
+      _maxPriceCtrl.text = _maxPrice.round().toString();
+    }
+  }
+
+  double _sliderMaxValue() =>
+      _maxPrice > MarketplaceFilterState.sliderMaxPrice ? MarketplaceFilterState.sliderMaxPrice : _maxPrice;
+
+  double _sliderMinValue() => _minPrice.clamp(0, MarketplaceFilterState.sliderMaxPrice);
+
+  void _applyPreset(({String label, double min, double max}) preset) {
+    setState(() {
+      _minPrice = preset.min;
+      _maxPrice = preset.max;
+      _syncPriceFieldsFromSlider();
+    });
+  }
+
+  void _applyManualPrices() {
+    final minRaw = int.tryParse(_minPriceCtrl.text.replaceAll(RegExp(r'[^0-9]'), ''));
+    final maxRaw = int.tryParse(_maxPriceCtrl.text.replaceAll(RegExp(r'[^0-9]'), ''));
+    setState(() {
+      _minPrice = (minRaw ?? 0).toDouble().clamp(0, MarketplaceFilterState.defaultMaxPrice);
+      if (maxRaw == null || maxRaw <= 0) {
+        _maxPrice = MarketplaceFilterState.defaultMaxPrice;
+      } else {
+        _maxPrice = maxRaw.toDouble().clamp(_minPrice, MarketplaceFilterState.defaultMaxPrice);
+      }
+      if (_maxPrice < _minPrice) _maxPrice = _minPrice;
+    });
+  }
+
+  void _resetPrices() {
+    _minPrice = 0;
+    _maxPrice = MarketplaceFilterState.defaultMaxPrice;
+    _syncPriceFieldsFromSlider();
+  }
+
+  String? _activePresetLabel() {
+    for (final p in _pricePresets) {
+      if (_minPrice == p.min && _maxPrice == p.max) return p.label;
+    }
+    return null;
   }
 
   @override
   void dispose() {
     _brandCtrl.dispose();
+    _minPriceCtrl.dispose();
+    _maxPriceCtrl.dispose();
     super.dispose();
   }
 
   MarketplaceFilterState _buildResult() {
+    _applyManualPrices();
     return MarketplaceFilterState()
       ..category = _category
       ..categoryId = _categoryId
@@ -153,6 +225,148 @@ class _MarketplaceFilterSheetState extends State<_MarketplaceFilterSheet> {
       ..officialOnly = _officialOnly
       ..minPrice = _minPrice
       ..maxPrice = _maxPrice;
+  }
+
+  Widget _buildPriceSection() {
+    final activePreset = _activePresetLabel();
+    final maxLabel = _maxPrice >= MarketplaceFilterState.defaultMaxPrice
+        ? 'Illimité'
+        : formatFilterPriceCdf(_maxPrice);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle('Prix (CDF)'),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: PremiumTheme.surface,
+            borderRadius: PremiumTheme.radiusMd,
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Minimum', style: PremiumTheme.label.copyWith(fontSize: 10)),
+                        Text(
+                          formatFilterPriceCdf(_minPrice),
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: PremiumTheme.blue),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.swap_horiz_rounded, color: PremiumTheme.textMuted.withValues(alpha: 0.5)),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text('Maximum', style: PremiumTheme.label.copyWith(fontSize: 10)),
+                        Text(
+                          maxLabel,
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: PremiumTheme.blue),
+                          textAlign: TextAlign.end,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 4,
+                  rangeThumbShape: const RoundRangeSliderThumbShape(enabledThumbRadius: 10),
+                  overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
+                ),
+                child: RangeSlider(
+                  values: RangeValues(
+                    _sliderMinValue(),
+                    _sliderMaxValue().clamp(_sliderMinValue() + MarketplaceFilterState.sliderStep, MarketplaceFilterState.sliderMaxPrice),
+                  ),
+                  min: 0,
+                  max: MarketplaceFilterState.sliderMaxPrice,
+                  divisions: (MarketplaceFilterState.sliderMaxPrice / MarketplaceFilterState.sliderStep).round(),
+                  activeColor: PremiumTheme.blue,
+                  inactiveColor: PremiumTheme.blue.withValues(alpha: 0.15),
+                  labels: RangeLabels(
+                    formatFilterPriceCdf(_minPrice),
+                    _maxPrice >= MarketplaceFilterState.defaultMaxPrice ? '5M+' : formatFilterPriceCdf(_maxPrice),
+                  ),
+                  onChanged: (v) => setState(() {
+                    _minPrice = v.start;
+                    _maxPrice = v.end >= MarketplaceFilterState.sliderMaxPrice - MarketplaceFilterState.sliderStep
+                        ? MarketplaceFilterState.defaultMaxPrice
+                        : v.end;
+                    _syncPriceFieldsFromSlider();
+                  }),
+                ),
+              ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _pricePresets.map((p) {
+                  final selected = activePreset == p.label;
+                  return FilterChip(
+                    label: Text(p.label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                    selected: selected,
+                    onSelected: (_) => _applyPreset(p),
+                    selectedColor: PremiumTheme.blue.withValues(alpha: 0.15),
+                    checkmarkColor: PremiumTheme.blue,
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _minPriceCtrl,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      decoration: InputDecoration(
+                        labelText: 'Min CDF',
+                        hintText: '0',
+                        isDense: true,
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onSubmitted: (_) => setState(_applyManualPrices),
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    child: Text('—', style: TextStyle(fontWeight: FontWeight.w700, color: PremiumTheme.textMuted)),
+                  ),
+                  Expanded(
+                    child: TextField(
+                      controller: _maxPriceCtrl,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      decoration: InputDecoration(
+                        labelText: 'Max CDF',
+                        hintText: 'Illimité',
+                        isDense: true,
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onSubmitted: (_) => setState(_applyManualPrices),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
   @override
@@ -187,8 +401,7 @@ class _MarketplaceFilterSheetState extends State<_MarketplaceFilterSheet> {
                     _quartier = null;
                     _minStars = null;
                     _officialOnly = false;
-                    _minPrice = 0;
-                    _maxPrice = 10000000;
+                    _resetPrices();
                   }),
                   child: const Text('Effacer'),
                 ),
@@ -200,6 +413,8 @@ class _MarketplaceFilterSheetState extends State<_MarketplaceFilterSheet> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
               children: [
+                _buildPriceSection(),
+                const SizedBox(height: 8),
                 _sectionTitle('Catégorie'),
                 _chipWrap(widget.categories, _category, (v) => setState(() {
                       _category = v;
@@ -283,18 +498,6 @@ class _MarketplaceFilterSheetState extends State<_MarketplaceFilterSheet> {
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                   onChanged: (_) => setState(() {}),
-                ),
-                _sectionTitle('Prix (CDF)'),
-                RangeSlider(
-                  values: RangeValues(_minPrice, _maxPrice.clamp(_minPrice + 1, 10000000)),
-                  min: 0,
-                  max: 10000000,
-                  divisions: 20,
-                  activeColor: PremiumTheme.blue,
-                  onChanged: (v) => setState(() {
-                    _minPrice = v.start;
-                    _maxPrice = v.end;
-                  }),
                 ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,

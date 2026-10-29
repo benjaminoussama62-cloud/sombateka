@@ -1,15 +1,25 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../config/app_config.dart';
 import 'package:flutter/services.dart';
 import '../theme/premium_theme.dart';
 import '../utils/constants.dart';
+import '../utils/api_errors.dart';
+import '../utils/responsive.dart';
 import '../services/data_service.dart';
 import '../services/social_auth_service.dart';
+import '../widgets/auth_hero_background.dart';
 import '../widgets/sombateka_wordmark.dart';
 import '../widgets/social_login_buttons.dart';
+import '../widgets/brand/auth_provider_icon.dart';
+import '../widgets/st_icon.dart';
+import '../widgets/st_safe_area.dart';
+import '../widgets/legal_document_sheet.dart';
+import '../security/screen_shield.dart';
+import '../utils/friendly_error.dart';
 
-enum AuthMode { register, login }
-enum AuthMethod { phone, email, apple }
+enum AuthMode { register, login, resetPassword }
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -24,87 +34,90 @@ class _AuthScreenState extends State<AuthScreen>
   late Animation<double> _sheetSlide;
   late Animation<double> _sheetOpacity;
 
-  AuthMode _mode = AuthMode.register;
-  AuthMethod _method = AuthMethod.phone;
+  AuthMode _mode = AuthMode.login;
 
-  // Contrôleurs champs
-  final _phoneController = TextEditingController();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
-  bool _passwordVisible = false;
+  final _confirmPasswordController = TextEditingController();
+  final _emailCodeController = TextEditingController();
+  final String _selectedCode = '+243';
+  bool _obscurePassword = true;
+  bool _obscureConfirm = true;
+  bool _sendingEmailCode = false;
+  bool _resetCodeSent = false;
 
   // CGU
   bool _cguAccepted = false;
-  bool _cguExpanded = false;
   bool _submitting = false;
 
   // Indicateur de validité du formulaire
   bool get _isFormValid {
-    if (_method == AuthMethod.phone) {
-      final phoneOk = _phoneController.text.trim().length >= 9;
-      if (_mode == AuthMode.register) {
-        return phoneOk && _nameController.text.trim().isNotEmpty && _cguAccepted;
-      }
-      return phoneOk && _cguAccepted;
-    }
-    if (_method == AuthMethod.email) {
-      final emailOk = _emailController.text.contains('@');
+    final emailOk = RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(_emailController.text.trim());
+    if (_mode == AuthMode.resetPassword) {
+      final codeOk = _emailCodeController.text.trim().length >= 4;
       final passOk = _passwordController.text.length >= 8;
-      if (_mode == AuthMode.register) {
-        return emailOk && passOk && _nameController.text.trim().isNotEmpty && _cguAccepted;
-      }
+      final confirmOk = _passwordController.text == _confirmPasswordController.text;
+      return emailOk && _resetCodeSent && codeOk && passOk && confirmOk;
+    }
+    if (_mode == AuthMode.login) {
+      final passOk = _passwordController.text.isNotEmpty;
       return emailOk && passOk && _cguAccepted;
     }
-    // Apple
-    return _cguAccepted;
+    final passOk = _passwordController.text.length >= 8;
+    final phoneOk = _phoneController.text.trim().length >= 9;
+    final confirmOk = _passwordController.text == _confirmPasswordController.text;
+    return emailOk &&
+        passOk &&
+        confirmOk &&
+        phoneOk &&
+        _nameController.text.trim().isNotEmpty &&
+        _cguAccepted;
   }
-
-  // Indicateur sélecteur indicatif
-  String _selectedFlag = '🇨🇩';
-  String _selectedCode = '+243';
 
   @override
   void initState() {
     super.initState();
+    // Interdit captures / enregistrement sur login · register · reset
+    unawaited(CyberScreenShield.enable());
 
     _sheetController = AnimationController(
-      duration: const Duration(milliseconds: 600),
+      duration: const Duration(milliseconds: 220),
       vsync: this,
-    );
-    _sheetSlide = Tween<double>(begin: 80, end: 0).animate(
-      CurvedAnimation(parent: _sheetController, curve: Curves.easeOutCubic),
-    );
-    _sheetOpacity = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _sheetController, curve: Curves.easeOut),
-    );
+    )..value = 1.0;
+    _sheetSlide = Tween<double>(begin: 0, end: 0).animate(_sheetController);
+    _sheetOpacity = Tween<double>(begin: 1, end: 1).animate(_sheetController);
 
-    Future.delayed(const Duration(milliseconds: 100), () {
-      if (mounted) _sheetController.forward();
-    });
-
-    _phoneController.addListener(() => setState(() {}));
     _nameController.addListener(() => setState(() {}));
     _emailController.addListener(() => setState(() {}));
+    _phoneController.addListener(() => setState(() {}));
     _passwordController.addListener(() => setState(() {}));
+    _confirmPasswordController.addListener(() => setState(() {}));
+    _emailCodeController.addListener(() => setState(() {}));
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final args = ModalRoute.of(context)?.settings.arguments as Map?;
-    if (args != null && args['mode'] == 'login') {
+    if (args != null && args['mode'] == 'register') {
+      setState(() => _mode = AuthMode.register);
+    } else if (args != null && args['mode'] == 'login') {
       setState(() => _mode = AuthMode.login);
     }
   }
 
   @override
   void dispose() {
+    unawaited(CyberScreenShield.disable());
     _sheetController.dispose();
-    _phoneController.dispose();
     _nameController.dispose();
     _emailController.dispose();
+    _phoneController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    _emailCodeController.dispose();
     super.dispose();
   }
 
@@ -113,249 +126,607 @@ class _AuthScreenState extends State<AuthScreen>
     HapticFeedback.lightImpact();
     setState(() => _submitting = true);
     try {
-      if (_method == AuthMethod.phone) {
-        final phone = DataService.normalizePhoneE164(
-          '$_selectedCode${_phoneController.text.trim()}',
+      final email = _emailController.text.trim();
+      final data = DataService();
+      if (_mode == AuthMode.login) {
+        await data.loginWithPassword(
+          email: email,
+          password: _passwordController.text,
         );
-        Map<String, dynamic> otpResult;
-        try {
-          otpResult = await DataService().sendOtp(phone);
-        } catch (e) {
-          if (!mounted) return;
-          final msg = e.toString();
-          final hint = msg.contains('connection error') ||
-                  msg.contains('XMLHttpRequest') ||
-                  msg.contains('connection errored') ||
-                  msg.contains('CORS')
-              ? ' Vérifiez que l’API tourne sur ${Uri.base.host}:8000'
-              : '';
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Erreur envoi OTP.$hint'),
-              duration: const Duration(seconds: 6),
-              backgroundColor: AppColors.danger,
-            ),
-          );
-          return;
-        }
         if (!mounted) return;
-        Navigator.pushNamed(context, AppRoutes.otp, arguments: {
-          'phone': phone,
-          'phone_e164': phone,
-          'channel': 'phone',
-          'name': _nameController.text.trim(),
-          'mode': _mode.name,
-          'dev_code': otpResult['dev_code']?.toString(),
-        });
-      } else if (_method == AuthMethod.email) {
-        final email = _emailController.text.trim();
-        Map<String, dynamic> otpResult;
-        try {
-          otpResult = await DataService().sendEmailOtp(
-            email,
-            displayName: _mode == AuthMode.register ? _nameController.text.trim() : null,
-          );
-        } catch (e) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Erreur envoi email : ${e.toString().replaceFirst('Exception: ', '')}'),
-              backgroundColor: AppColors.danger,
-            ),
-          );
-          return;
-        }
+        await data.refreshListings();
+        Navigator.pushNamedAndRemoveUntil(context, AppRoutes.main, (_) => false);
+      } else if (_mode == AuthMode.resetPassword) {
+        await data.resetPasswordWithCode(
+          email: email,
+          code: _emailCodeController.text.trim(),
+          newPassword: _passwordController.text,
+        );
         if (!mounted) return;
-        Navigator.pushNamed(context, AppRoutes.otp, arguments: {
-          'channel': 'email',
-          'email': email,
-          'name': _nameController.text.trim(),
-          'mode': _mode.name,
-          'dev_code': otpResult['dev_code']?.toString(),
-        });
+        await data.refreshListings();
+        Navigator.pushNamedAndRemoveUntil(context, AppRoutes.main, (_) => false);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Utilisez l\'onglet Téléphone ou Google / Apple ci-dessous')),
+        final phone = DataService.normalizePhoneE164('$_selectedCode${_phoneController.text.trim()}');
+        await data.registerAccount(
+          email: email,
+          password: _passwordController.text,
+          phoneE164: phone,
+          displayName: _nameController.text.trim(),
         );
+        if (!mounted) return;
+        await data.refreshListings();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Compte créé. Confirmez-le dans Paramètres → Vérifier mon compte.'),
+            backgroundColor: AppColors.secondary,
+            duration: Duration(seconds: 4),
+          ),
+        );
+        Navigator.pushNamedAndRemoveUntil(context, AppRoutes.main, (_) => false);
       }
+    } catch (e) {
+      if (!mounted) return;
+      final msg = friendlyError(e, fallback: 'Inscription ou connexion impossible');
+      if (_mode == AuthMode.login && msg.contains('Créez un compte')) {
+        _goRegister();
+      } else if (_mode == AuthMode.login && msg.contains('Google ou Apple')) {
+        // Rester sur l'écran connexion — message déjà affiché.
+      } else if (_mode == AuthMode.register && msg.contains('Connectez-vous')) {
+        _goLogin();
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(msg.isNotEmpty ? msg : 'Erreur de connexion'),
+          backgroundColor: AppColors.danger,
+        ),
+      );
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
   }
 
+  Future<void> _sendResetPasswordCode() async {
+    final email = _emailController.text.trim();
+    if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(email)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Entrez votre adresse e-mail')),
+      );
+      return;
+    }
+    setState(() => _sendingEmailCode = true);
+    try {
+      await DataService().requestPasswordReset(email);
+      if (!mounted) return;
+      setState(() => _resetCodeSent = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Code de réinitialisation envoyé par e-mail.'),
+          backgroundColor: AppColors.secondary,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(friendlyApiError(e, fallback: 'Envoi impossible')),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _sendingEmailCode = false);
+    }
+  }
+
+  void _startForgotPassword() {
+    setState(() {
+      _mode = AuthMode.resetPassword;
+      _resetCodeSent = false;
+      _emailCodeController.clear();
+      _passwordController.clear();
+      _confirmPasswordController.clear();
+    });
+  }
+
+  void _backToLogin() {
+    setState(() {
+      _mode = AuthMode.login;
+      _resetCodeSent = false;
+      _emailCodeController.clear();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final isRegister = _mode == AuthMode.register;
+    final compact = Responsive.isCompact(context);
+    final viewH = MediaQuery.sizeOf(context).height;
+    final heroH = (viewH * (compact ? 0.36 : 0.40)).clamp(220.0, compact ? 280.0 : 320.0);
+    final topInset = MediaQuery.viewPaddingOf(context).top;
+
+    if (Responsive.isDesktopWeb(context)) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        resizeToAvoidBottomInset: true,
+        body: Row(
+          children: [
+            Expanded(
+              child: _buildTopSection(isRegister, compact, shrink: false, fullHeight: true),
+            ),
+            Expanded(
+              child: _buildAuthFormPanel(topInset: 0, showBack: true),
+            ),
+          ],
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: PremiumTheme.navy,
-      body: Column(
-        children: [
-          _buildTopSection(isRegister),
-          Expanded(
-            child: AnimatedBuilder(
-              animation: _sheetController,
-              builder: (_, child) => Opacity(
-                opacity: _sheetOpacity.value,
-                child: Transform.translate(
-                  offset: Offset(0, _sheetSlide.value),
-                  child: child,
-                ),
-              ),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.12),
-                      blurRadius: 24,
-                      offset: const Offset(0, -4),
-                    ),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(24, 28, 24, 48),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildMethodTabs(),
-                        const SizedBox(height: 24),
-                        _buildForm(),
-                        _buildCGUSection(),
-                        const SizedBox(height: 20),
-                        _buildSubmitButton(),
-                        if (AppConfig.showSocialLogin) ...[
-                          const SizedBox(height: 20),
-                          _buildDivider(),
-                          const SizedBox(height: 16),
-                          SocialLoginButtons(
-                            onGoogle: _cguAccepted ? () => _socialSignIn('google') : null,
-                            onApple: _cguAccepted ? () => _socialSignIn('apple') : null,
-                          ),
-                        ],
-                        const SizedBox(height: 24),
-                        _buildSwitchModeLink(),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTopSection(bool isRegister) {
-    return Container(
-      decoration: PremiumTheme.heroGradient,
-      child: Stack(
-        children: [
-          Positioned(
-            top: -40,
-            right: -30,
-            child: Container(
-              width: 140,
-              height: 140,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: PremiumTheme.blue.withValues(alpha: 0.15),
-              ),
-            ),
-          ),
-          SafeArea(
-            bottom: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.white24),
-                      ),
-                      child: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 20),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  const Center(
-                    child: SombaTekaWordmark(iconSize: 52, fontSize: 28, animate: false),
-                  ),
-                  const SizedBox(height: 16),
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 300),
-                    child: Text(
-                      isRegister ? '✨ Créer un compte' : '👋 Se connecter',
-                      key: ValueKey(isRegister),
-                      style: PremiumTheme.display.copyWith(fontSize: 26),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 300),
-                    child: Text(
-                      isRegister
-                          ? 'Rejoignez ${AppStrings.appName}, la marketplace pensée pour la RDC.'
-                          : 'Heureux de vous revoir sur ${AppStrings.appName}.',
-                      key: ValueKey('sub-$isRegister'),
-                      style: PremiumTheme.body.copyWith(color: Colors.white60, fontSize: 14, height: 1.45),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  _buildTrustPills(),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTrustPills() {
-    const pills = [
-      (Icons.phone_android_rounded, 'OTP sécurisé'),
-      (Icons.payments_rounded, 'Mobile Money'),
-      (Icons.verified_rounded, 'Vendeurs certifiés'),
-    ];
-    return SizedBox(
-      height: 36,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: pills.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (_, i) {
-          final p = pills[i];
-          return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white24),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
+      resizeToAvoidBottomInset: true,
+      body: DecoratedBox(
+        decoration: PremiumTheme.heroGradient,
+        child: Padding(
+        padding: EdgeInsets.only(top: topInset),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: double.infinity),
+            child: Column(
               children: [
-                Icon(p.$1, size: 16, color: PremiumTheme.gold),
-                const SizedBox(width: 6),
-                Text(
-                  p.$2,
-                  style: PremiumTheme.label.copyWith(color: Colors.white, fontSize: 11),
+                SizedBox(
+                  height: heroH,
+                  child: _buildTopSection(isRegister, compact, shrink: compact || viewH < 700),
                 ),
+                Expanded(child: _buildAuthFormPanel(topInset: 0, showBack: false)),
               ],
             ),
-          );
-        },
+          ),
+        ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAuthFormPanel({required double topInset, required bool showBack}) {
+    return AnimatedBuilder(
+      animation: _sheetController,
+      builder: (_, child) => Opacity(
+        opacity: _sheetOpacity.value,
+        child: Transform.translate(
+          offset: Offset(0, _sheetSlide.value),
+          child: child,
+        ),
+      ),
+      child: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: showBack
+              ? BorderRadius.zero
+              : const BorderRadius.vertical(top: Radius.circular(28)),
+          boxShadow: showBack
+              ? null
+              : [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.12),
+                    blurRadius: 24,
+                    offset: const Offset(0, -4),
+                  ),
+                ],
+        ),
+        child: ClipRRect(
+          borderRadius: showBack
+              ? BorderRadius.zero
+              : const BorderRadius.vertical(top: Radius.circular(28)),
+          child: SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: StBottomInset.padding(context, left: 24, top: 24, right: 24, bottom: 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (showBack)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: IconButton(
+                      onPressed: () => Navigator.maybePop(context),
+                      icon: const Icon(Icons.arrow_back_rounded),
+                    ),
+                  ),
+                if (_mode == AuthMode.login) ...[
+                  Text(
+                    'Compte existant requis — email + mot de passe',
+                    style: PremiumTheme.h1.copyWith(fontSize: 16),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  _buildCGUSection(),
+                  const SizedBox(height: 20),
+                  if (AppConfig.showSocialLogin) ...[
+                    SocialLoginButtons(
+                      onGoogle: _cguAccepted && AppConfig.showGoogleLogin
+                          ? () => _socialSignIn('google')
+                          : null,
+                      onApple: _cguAccepted && AppConfig.showAppleLogin
+                          ? () => _socialSignIn('apple')
+                          : null,
+                      showApple: AppConfig.showAppleLogin,
+                      layout: Responsive.isDesktopWeb(context)
+                          ? SocialLoginLayout.row
+                          : SocialLoginLayout.column,
+                    ),
+                    const SizedBox(height: 20),
+                    _buildDivider(label: 'ou par e-mail'),
+                    const SizedBox(height: 20),
+                  ],
+                  _buildLoginForm(),
+                ] else if (_mode == AuthMode.resetPassword) ...[
+                  Text(
+                    'Mot de passe oublié',
+                    style: PremiumTheme.h1.copyWith(fontSize: 16),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Un code de réinitialisation sera envoyé à votre e-mail.',
+                    textAlign: TextAlign.center,
+                    style: PremiumTheme.body.copyWith(fontSize: 13, color: Colors.grey[600], height: 1.4),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildResetPasswordForm(),
+                ] else ...[
+                  Text(
+                    'Informations du compte',
+                    style: PremiumTheme.h1.copyWith(fontSize: 16),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  _buildCGUSection(),
+                  const SizedBox(height: 20),
+                  _buildRegisterForm(),
+                ],
+                const SizedBox(height: 20),
+                _buildSubmitButton(),
+                const SizedBox(height: 16),
+                _buildSwitchModeLink(),
+                if (_mode == AuthMode.resetPassword) ...[
+                  const SizedBox(height: 8),
+                  Center(
+                    child: TextButton(
+                      onPressed: _backToLogin,
+                      child: const Text(
+                        'Retour à la connexion',
+                        style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.primary),
+                      ),
+                    ),
+                  ),
+                ] else if (_mode == AuthMode.login) ...[
+                  const SizedBox(height: 8),
+                  Center(
+                    child: TextButton(
+                      onPressed: () => Navigator.pushNamedAndRemoveUntil(
+                        context,
+                        AppRoutes.main,
+                        (_) => false,
+                      ),
+                      child: Text(
+                        'Continuer sans compte',
+                        style: TextStyle(fontSize: 13, color: Colors.grey[600], fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopSection(bool isRegister, bool compact, {bool shrink = false, bool fullHeight = false}) {
+    final content = Padding(
+      padding: EdgeInsets.fromLTRB(16, compact ? 4 : 8, 16, compact ? 12 : 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisAlignment: fullHeight ? MainAxisAlignment.center : MainAxisAlignment.start,
+        children: [
+          if (!fullHeight)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: const StIcon(
+                    icon: Icons.arrow_back_rounded,
+                    webGlyph: '←',
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                ),
+              ),
+            ),
+          if (!fullHeight) SizedBox(height: compact ? 6 : 10),
+          SombaTekaWordmark(
+            iconSize: fullHeight ? 72 : (shrink ? 40 : (compact ? 44 : 52)),
+            fontSize: fullHeight ? 36 : (shrink ? 22 : (compact ? 24 : 28)),
+            animate: false,
+          ),
+          SizedBox(height: compact ? 6 : (fullHeight ? 20 : 10)),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: Text(
+              _mode == AuthMode.register
+                  ? 'Créer un compte'
+                  : _mode == AuthMode.resetPassword
+                      ? 'Mot de passe oublié'
+                      : 'Se connecter',
+              key: ValueKey('title-$_mode'),
+              textAlign: TextAlign.center,
+              style: PremiumTheme.display.copyWith(fontSize: fullHeight ? 32 : (shrink ? 20 : (compact ? 22 : 26))),
+            ),
+          ),
+          const SizedBox(height: 6),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: Text(
+              _mode == AuthMode.register
+                  ? 'E-mail valide, téléphone RDC et mot de passe — vérifiez le compte ensuite dans Paramètres.'
+                  : _mode == AuthMode.resetPassword
+                      ? 'Réinitialisez votre accès avec le code reçu par e-mail.'
+                      : 'Connectez-vous avec le compte que vous avez déjà créé.',
+              key: ValueKey('sub-$_mode'),
+              textAlign: TextAlign.center,
+              style: PremiumTheme.body.copyWith(
+                color: Colors.white60,
+                fontSize: fullHeight ? 16 : (compact ? 13 : 14),
+                height: 1.45,
+              ),
+            ),
+          ),
+          SizedBox(height: compact ? 6 : (fullHeight ? 16 : 10)),
+          _buildTrustPills(compact),
+        ],
+      ),
+    );
+
+    return AuthHeroBackground(
+      child: Container(
+        width: double.infinity,
+        height: fullHeight ? double.infinity : null,
+        child: Stack(
+          children: [
+            if (fullHeight) Center(child: content) else content,
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _goLogin() {
+    Navigator.pushReplacementNamed(context, AppRoutes.auth, arguments: {'mode': 'login'});
+  }
+
+  void _goRegister() {
+    Navigator.pushReplacementNamed(context, AppRoutes.auth, arguments: {'mode': 'register'});
+  }
+
+  Widget _buildLoginForm() {
+    return Column(
+      children: [
+        _InputField(
+          controller: _emailController,
+          label: 'Adresse email',
+          hint: 'votre.email@gmail.com',
+          icon: Icons.email_rounded,
+          webGlyph: '✉️',
+          keyboardType: TextInputType.emailAddress,
+          brandIcon: AuthProviderKind.email,
+        ),
+        const SizedBox(height: 14),
+        _InputField(
+          controller: _passwordController,
+          label: 'Mot de passe',
+          hint: 'Votre mot de passe',
+          icon: Icons.lock_rounded,
+          webGlyph: '🔒',
+          obscureText: _obscurePassword,
+          suffix: IconButton(
+            icon: Icon(_obscurePassword ? Icons.visibility_off_rounded : Icons.visibility_rounded, size: 20),
+            onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(
+            onPressed: _startForgotPassword,
+            style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+            child: const Text(
+              'Mot de passe oublié ?',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.primary),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildResetPasswordForm() {
+    return Column(
+      children: [
+        _InputField(
+          controller: _emailController,
+          label: 'Adresse email',
+          hint: 'votre.email@gmail.com',
+          icon: Icons.email_rounded,
+          webGlyph: '✉️',
+          keyboardType: TextInputType.emailAddress,
+          brandIcon: AuthProviderKind.email,
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: _sendingEmailCode ? null : _sendResetPasswordCode,
+          icon: _sendingEmailCode
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.mail_outline_rounded, size: 18),
+          label: Text(_resetCodeSent ? 'Renvoyer le code' : 'Recevoir le code par e-mail'),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(double.infinity, 46),
+            foregroundColor: AppColors.primary,
+          ),
+        ),
+        const SizedBox(height: 14),
+        _InputField(
+          controller: _emailCodeController,
+          label: 'Code reçu par e-mail',
+          hint: '6 chiffres',
+          icon: Icons.pin_rounded,
+          webGlyph: '🔢',
+          keyboardType: TextInputType.number,
+        ),
+        const SizedBox(height: 14),
+        _InputField(
+          controller: _passwordController,
+          label: 'Nouveau mot de passe',
+          hint: '8 caractères minimum',
+          icon: Icons.lock_rounded,
+          webGlyph: '🔒',
+          obscureText: _obscurePassword,
+          suffix: IconButton(
+            icon: Icon(_obscurePassword ? Icons.visibility_off_rounded : Icons.visibility_rounded, size: 20),
+            onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+          ),
+        ),
+        const SizedBox(height: 14),
+        _InputField(
+          controller: _confirmPasswordController,
+          label: 'Confirmer le mot de passe',
+          hint: 'Retapez le mot de passe',
+          icon: Icons.lock_rounded,
+          webGlyph: '🔒',
+          obscureText: _obscureConfirm,
+          suffix: IconButton(
+            icon: Icon(_obscureConfirm ? Icons.visibility_off_rounded : Icons.visibility_rounded, size: 20),
+            onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRegisterForm() {
+    return Column(
+      children: [
+        _InputField(
+          controller: _nameController,
+          label: 'Nom complet',
+          hint: 'Jean Mukendi',
+          icon: Icons.person_rounded,
+          webGlyph: '👤',
+        ),
+        const SizedBox(height: 14),
+        _InputField(
+          controller: _emailController,
+          label: 'Adresse e-mail',
+          hint: 'votre.email@gmail.com',
+          icon: Icons.email_rounded,
+          webGlyph: '✉️',
+          keyboardType: TextInputType.emailAddress,
+          brandIcon: AuthProviderKind.email,
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: 6, bottom: 4),
+          child: Text(
+            'Adresse e-mail personnelle (Gmail, Outlook…). Un seul compte par e-mail.',
+            style: TextStyle(fontSize: 11, color: Colors.grey[600], height: 1.35),
+          ),
+        ),
+        const SizedBox(height: 14),
+        _buildPhoneField(),
+        const SizedBox(height: 14),
+        _InputField(
+          controller: _passwordController,
+          label: 'Mot de passe',
+          hint: '8 caractères minimum',
+          icon: Icons.lock_rounded,
+          webGlyph: '🔒',
+          obscureText: _obscurePassword,
+          suffix: IconButton(
+            icon: Icon(_obscurePassword ? Icons.visibility_off_rounded : Icons.visibility_rounded, size: 20),
+            onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+          ),
+        ),
+        const SizedBox(height: 14),
+        _InputField(
+          controller: _confirmPasswordController,
+          label: 'Confirmer le mot de passe',
+          hint: 'Retapez le mot de passe',
+          icon: Icons.lock_outline_rounded,
+          webGlyph: '🔒',
+          obscureText: _obscureConfirm,
+          suffix: IconButton(
+            icon: Icon(_obscureConfirm ? Icons.visibility_off_rounded : Icons.visibility_rounded, size: 20),
+            onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTrustPills(bool compact) {
+    final pills = _mode == AuthMode.login
+        ? <Widget>[
+            const Icon(Icons.lock_rounded, size: 14, color: Colors.white),
+            const AuthProviderIcon(kind: AuthProviderKind.google, size: 14),
+            const AuthProviderIcon(kind: AuthProviderKind.apple, size: 14, color: Colors.white),
+          ]
+        : <Widget>[
+            const Icon(Icons.lock_rounded, size: 14, color: Colors.white),
+            const Icon(Icons.phone_android_rounded, size: 14, color: Colors.white),
+            const Icon(Icons.verified_rounded, size: 14, color: Colors.white),
+          ];
+    final labels = _mode == AuthMode.login
+        ? ['Mot de passe', 'Google', 'Apple']
+        : ['Mot de passe sécurisé', 'Téléphone unique', 'Compte vérifiable'];
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(),
+      child: Row(
+        children: [
+          for (var i = 0; i < pills.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: _trustPill(pills[i], labels[i], compact: compact),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _trustPill(Widget icon, String label, {bool compact = false}) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 12, vertical: compact ? 6 : 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          icon,
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: PremiumTheme.label.copyWith(color: Colors.white, fontSize: 11),
+          ),
+        ],
       ),
     );
   }
@@ -374,86 +745,34 @@ class _AuthScreenState extends State<AuthScreen>
         await SocialAuthService.instance.signInWithApple(context);
       }
       if (!mounted) return;
-      await DataService().refreshListings();
+      final ds = DataService();
+      await ds.refreshUser();
+      await ds.refreshListings();
+      if (!mounted) return;
+      if (ds.needsAccountSetup()) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Compte connecté. Finalisez-le dans Paramètres (téléphone + mot de passe).'),
+            backgroundColor: AppColors.primary,
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
       Navigator.pushNamedAndRemoveUntil(context, AppRoutes.main, (_) => false);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Connexion impossible : $e')),
+        SnackBar(content: Text(friendlyError(e, fallback: 'Connexion impossible. Réessayez.'))),
       );
     }
   }
 
   void _switchAuthMode() {
-    setState(() {
-      _mode = _mode == AuthMode.register ? AuthMode.login : AuthMode.register;
-    });
-    _sheetController
-      ..reset()
-      ..forward();
-  }
-
-  Widget _buildMethodTabs() {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        children: [
-          _MethodTab(
-            label: 'Téléphone',
-            icon: Icons.phone_rounded,
-            selected: _method == AuthMethod.phone,
-            onTap: () => setState(() => _method = AuthMethod.phone),
-          ),
-          _MethodTab(
-            label: 'Email',
-            icon: Icons.email_rounded,
-            selected: _method == AuthMethod.email,
-            onTap: () => setState(() => _method = AuthMethod.email),
-          ),
-          _MethodTab(
-            label: 'Apple',
-            icon: Icons.apple_rounded,
-            selected: _method == AuthMethod.apple,
-            onTap: () => setState(() => _method = AuthMethod.apple),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildForm() {
-    if (_method == AuthMethod.apple) {
-      return _buildAppleSection();
+    if (_mode == AuthMode.register) {
+      _goLogin();
+    } else {
+      _goRegister();
     }
-    return Column(
-      children: [
-        if (_mode == AuthMode.register) ...[
-          _InputField(
-            controller: _nameController,
-            label: 'Nom complet',
-            hint: 'Jean Mukendi',
-            icon: Icons.person_rounded,
-          ),
-          const SizedBox(height: 14),
-        ],
-        if (_method == AuthMethod.phone) _buildPhoneField(),
-        if (_method == AuthMethod.email) ...[
-          _InputField(
-            controller: _emailController,
-            label: 'Adresse email',
-            hint: 'jean@example.com',
-            icon: Icons.email_rounded,
-            keyboardType: TextInputType.emailAddress,
-          ),
-          const SizedBox(height: 14),
-          _buildPasswordField(),
-        ],
-      ],
-    );
   }
 
   Widget _buildPhoneField() {
@@ -472,34 +791,16 @@ class _AuthScreenState extends State<AuthScreen>
         const SizedBox(height: 8),
         Row(
           children: [
-            GestureDetector(
-              onTap: _showCountryPicker,
-              child: Container(
-                height: 52,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF9FAFB),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE5E7EB), width: 1.5),
-                ),
-                child: Row(
-                  children: [
-                    Text(_selectedFlag, style: const TextStyle(fontSize: 20)),
-                    const SizedBox(width: 6),
-                    Text(
-                      _selectedCode,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1F2937),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    const Icon(Icons.keyboard_arrow_down_rounded,
-                        size: 16, color: Color(0xFF6B7280)),
-                  ],
-                ),
+            Container(
+              height: 52,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF9FAFB),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE5E7EB), width: 1.5),
               ),
+              child: Text(_selectedCode, style: const TextStyle(fontWeight: FontWeight.w700)),
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -509,308 +810,152 @@ class _AuthScreenState extends State<AuthScreen>
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 decoration: InputDecoration(
                   hintText: '812 345 678',
-                  hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   filled: true,
                   fillColor: const Color(0xFFF9FAFB),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(
-                        color: Color(0xFFE5E7EB), width: 1.5),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(
-                        color: Color(0xFFE5E7EB), width: 1.5),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(
-                        color: AppColors.primary, width: 1.5),
-                  ),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 ),
               ),
             ),
           ],
         ),
-      ],
-    );
-  }
-
-  Widget _buildPasswordField() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'MOT DE PASSE',
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF374151),
-            letterSpacing: 0.8,
-          ),
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _passwordController,
-          obscureText: !_passwordVisible,
-          decoration: InputDecoration(
-            hintText: 'Min. 8 caractères',
-            hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
-            prefixIcon: const Icon(Icons.lock_rounded,
-                color: Color(0xFF9CA3AF), size: 20),
-            suffixIcon: GestureDetector(
-              onTap: () =>
-                  setState(() => _passwordVisible = !_passwordVisible),
-              child: Icon(
-                _passwordVisible
-                    ? Icons.visibility_off_rounded
-                    : Icons.visibility_rounded,
-                color: const Color(0xFF9CA3AF),
-                size: 20,
-              ),
-            ),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            filled: true,
-            fillColor: const Color(0xFFF9FAFB),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide:
-                  const BorderSide(color: Color(0xFFE5E7EB), width: 1.5),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide:
-                  const BorderSide(color: Color(0xFFE5E7EB), width: 1.5),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide:
-                  const BorderSide(color: AppColors.primary, width: 1.5),
-            ),
-          ),
+        const SizedBox(height: 6),
+        Text(
+          'Numéro mobile RDC (+243 8xx / 9xx). Un seul compte par numéro. Pas d\'e-mails jetables.',
+          style: TextStyle(fontSize: 11, color: Colors.grey[600]),
         ),
       ],
-    );
-  }
-
-  Widget _buildAppleSection() {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 28),
-      child: Column(
-        children: [
-          Container(
-            width: 80,
-            height: 80,
-            decoration: BoxDecoration(
-              color: Colors.black,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Icon(Icons.apple_rounded,
-                color: Colors.white, size: 44),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'Connexion avec Apple',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF1F2937),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Votre email Apple reste privé.\nVos données ne sont jamais partagées.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13,
-              color: Colors.grey[600],
-              height: 1.5,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF0FDF4),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFBBF7D0)),
-            ),
-            child: const Text(
-              '🔒 Disponible sur iPhone (iOS 13+)',
-              style: TextStyle(
-                fontSize: 12,
-                color: Color(0xFF16A34A),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 
   Widget _buildCGUSection() {
-    return Padding(
-      padding: const EdgeInsets.only(top: 20),
-      child: Container(
-        decoration: BoxDecoration(
-          color: _cguAccepted
-              ? const Color(0xFFF0FDF4)
-              : const Color(0xFFF9FAFB),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: _cguAccepted
-                ? const Color(0xFFBBF7D0)
-                : const Color(0xFFE5E7EB),
-            width: 1.5,
-          ),
+    return Container(
+      decoration: BoxDecoration(
+        color: _cguAccepted ? const Color(0xFFF0FDF4) : const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: _cguAccepted ? const Color(0xFFBBF7D0) : const Color(0xFFFDBA74),
+          width: 1.5,
         ),
-        child: Column(
-          children: [
-            // Ligne principale checkbox
-            GestureDetector(
-              onTap: () => setState(() => _cguAccepted = !_cguAccepted),
-              behavior: HitTestBehavior.opaque,
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      width: 22,
-                      height: 22,
-                      decoration: BoxDecoration(
-                        color: _cguAccepted
-                            ? AppColors.secondary
-                            : Colors.white,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: _cguAccepted
-                              ? AppColors.secondary
-                              : const Color(0xFFD1D5DB),
-                          width: 2,
-                        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+            child: Text(
+              _mode == AuthMode.login
+                  ? 'Acceptation obligatoire avant de vous connecter'
+                  : 'Acceptation obligatoire pour créer un compte',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: _cguAccepted ? const Color(0xFF166534) : const Color(0xFF9A3412),
+              ),
+            ),
+          ),
+          GestureDetector(
+            onTap: () => setState(() => _cguAccepted = !_cguAccepted),
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: 22,
+                    height: 22,
+                    decoration: BoxDecoration(
+                      color: _cguAccepted ? AppColors.secondary : Colors.white,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: _cguAccepted ? AppColors.secondary : const Color(0xFFD1D5DB),
+                        width: 2,
                       ),
-                      child: _cguAccepted
-                          ? const Icon(Icons.check_rounded,
-                              color: Colors.white, size: 14)
-                          : null,
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: RichText(
-                        text: TextSpan(
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: Color(0xFF374151),
-                            height: 1.5,
-                          ),
-                          children: [
-                            const TextSpan(text: "J'accepte les "),
-                            WidgetSpan(
-                              child: GestureDetector(
-                                onTap: () =>
-                                    setState(() => _cguExpanded = !_cguExpanded),
-                                child: const Text(
-                                  "Conditions d'utilisation",
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: AppColors.primary,
-                                    fontWeight: FontWeight.w600,
-                                    decoration: TextDecoration.underline,
-                                  ),
+                    child: _cguAccepted
+                        ? const Text(
+                            '✓',
+                            style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800),
+                          )
+                        : null,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: RichText(
+                      text: TextSpan(
+                        style: const TextStyle(fontSize: 13, color: Color(0xFF374151), height: 1.5),
+                        children: [
+                          const TextSpan(text: "J'ai lu et j'accepte les "),
+                          WidgetSpan(
+                            child: GestureDetector(
+                              onTap: () => LegalDocumentSheet.showTerms(context),
+                              child: const Text(
+                                "Conditions générales d'utilisation",
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w700,
+                                  decoration: TextDecoration.underline,
                                 ),
                               ),
                             ),
-                            const TextSpan(text: ' et la '),
-                            const TextSpan(
-                              text: 'Politique de confidentialité',
-                              style: TextStyle(
-                                color: AppColors.primary,
-                                fontWeight: FontWeight.w600,
+                          ),
+                          const TextSpan(text: ' et la '),
+                          WidgetSpan(
+                            child: GestureDetector(
+                              onTap: () => LegalDocumentSheet.showPrivacy(context),
+                              child: const Text(
+                                'Politique de confidentialité',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w700,
+                                  decoration: TextDecoration.underline,
+                                ),
                               ),
                             ),
-                            TextSpan(text: ' de ${AppStrings.appName}.'),
-                          ],
-                        ),
+                          ),
+                          TextSpan(text: ' de ${AppStrings.appName}.'),
+                        ],
                       ),
                     ),
-                    // Bouton expand
-                    GestureDetector(
-                      onTap: () =>
-                          setState(() => _cguExpanded = !_cguExpanded),
-                      child: Icon(
-                        _cguExpanded
-                            ? Icons.keyboard_arrow_up_rounded
-                            : Icons.keyboard_arrow_down_rounded,
-                        size: 20,
-                        color: const Color(0xFF9CA3AF),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
-            // Détails expandable
-            AnimatedCrossFade(
-              firstChild: const SizedBox.shrink(),
-              secondChild: _buildCGUDetails(),
-              crossFadeState: _cguExpanded
-                  ? CrossFadeState.showSecond
-                  : CrossFadeState.showFirst,
-              duration: const Duration(milliseconds: 250),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCGUDetails() {
-    final items = [
-      {'icon': '💰', 'text': 'Commission 5 % sur les ventes des vendeurs officiels'},
-      {'icon': '⚖️', 'text': 'Litiges traités depuis l\'application en cas de problème'},
-      {'icon': '📅', 'text': 'Reversement vendeur sous 24 h (T+1) après confirmation'},
-      {'icon': '🔒', 'text': 'Transactions sécurisées via Mobile Money (MTN, Orange)'},
-      {'icon': '🛡️', 'text': 'Données personnelles protégées et jamais revendues'},
-      {'icon': '🚫', 'text': 'Max 5 annonces actives pour un compte particulier'},
-    ];
-
-    return Container(
-      margin: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-      ),
-      child: Column(
-        children: items.map((item) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 8),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(item['icon']!, style: const TextStyle(fontSize: 14)),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => LegalDocumentSheet.showTerms(context),
+                    icon: const Icon(Icons.description_outlined, size: 16),
+                    label: const Text('CGU complètes', style: TextStyle(fontSize: 11)),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(
-                    item['text']!,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFF4B5563),
-                      height: 1.4,
+                  child: OutlinedButton.icon(
+                    onPressed: () => LegalDocumentSheet.showPrivacy(context),
+                    icon: const Icon(Icons.privacy_tip_outlined, size: 16),
+                    label: const Text('Confidentialité', style: TextStyle(fontSize: 11)),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      visualDensity: VisualDensity.compact,
                     ),
                   ),
                 ),
               ],
             ),
-          );
-        }).toList(),
+          ),
+        ],
       ),
     );
   }
@@ -851,7 +996,11 @@ class _AuthScreenState extends State<AuthScreen>
                   child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
                 )
               : Text(
-                  _mode == AuthMode.register ? 'Créer mon compte →' : 'Se connecter →',
+                  _mode == AuthMode.register
+                      ? 'Créer mon compte →'
+                      : _mode == AuthMode.resetPassword
+                          ? 'Réinitialiser le mot de passe →'
+                          : 'Se connecter →',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -864,7 +1013,7 @@ class _AuthScreenState extends State<AuthScreen>
     );
   }
 
-  Widget _buildDivider() {
+  Widget _buildDivider({String label = 'ou continuer avec'}) {
     return Row(
       children: [
         Expanded(
@@ -873,7 +1022,7 @@ class _AuthScreenState extends State<AuthScreen>
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Text(
-            'ou continuer avec',
+            label,
             style: TextStyle(fontSize: 12, color: Colors.grey[500]),
           ),
         ),
@@ -885,6 +1034,7 @@ class _AuthScreenState extends State<AuthScreen>
   }
 
   Widget _buildSwitchModeLink() {
+    if (_mode == AuthMode.resetPassword) return const SizedBox.shrink();
     final isRegister = _mode == AuthMode.register;
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -907,143 +1057,52 @@ class _AuthScreenState extends State<AuthScreen>
       ],
     );
   }
-
-  void _showCountryPicker() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              margin: const EdgeInsets.only(top: 12, bottom: 16),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const Text(
-              'Choisir l\'indicatif',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 12),
-            ...AppStrings.flagPrefixes.map((p) => ListTile(
-                  leading: Text(p['flag']!, style: const TextStyle(fontSize: 24)),
-                  title: Text(p['country']!,
-                      style: const TextStyle(fontWeight: FontWeight.w600)),
-                  trailing: Text(
-                    p['code']!,
-                    style: const TextStyle(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  onTap: () {
-                    setState(() {
-                      _selectedFlag = p['flag']!;
-                      _selectedCode = p['code']!;
-                    });
-                    Navigator.pop(context);
-                  },
-                )),
-            const SizedBox(height: 20),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 // ─────────────────────────────────────────
 // Sous-widgets réutilisables
 // ─────────────────────────────────────────
 
-class _MethodTab extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _MethodTab({
-    required this.label,
-    required this.icon,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: selected ? Colors.white : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-            boxShadow: selected
-                ? [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.08),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    )
-                  ]
-                : null,
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 15,
-                color: selected ? AppColors.primary : const Color(0xFF9CA3AF),
-              ),
-              const SizedBox(width: 5),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight:
-                      selected ? FontWeight.w700 : FontWeight.w500,
-                  color: selected
-                      ? AppColors.primary
-                      : const Color(0xFF9CA3AF),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _InputField extends StatelessWidget {
   final TextEditingController controller;
   final String label;
   final String hint;
   final IconData icon;
+  final String webGlyph;
   final TextInputType keyboardType;
+  final bool obscureText;
+  final Widget? suffix;
+  final AuthProviderKind? brandIcon;
 
   const _InputField({
     required this.controller,
     required this.label,
     required this.hint,
     required this.icon,
+    required this.webGlyph,
     this.keyboardType = TextInputType.text,
+    this.obscureText = false,
+    this.suffix,
+    this.brandIcon,
   });
 
   @override
   Widget build(BuildContext context) {
+    final prefix = brandIcon != null
+        ? Padding(
+            padding: const EdgeInsets.only(left: 12, right: 6),
+            child: AuthProviderIcon(kind: brandIcon!, size: 22),
+          )
+        : Padding(
+            padding: const EdgeInsets.only(left: 14, right: 8),
+            child: StIcon(
+              icon: icon,
+              webGlyph: webGlyph,
+              color: const Color(0xFF9CA3AF),
+              size: 20,
+            ),
+          );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1060,10 +1119,13 @@ class _InputField extends StatelessWidget {
         TextField(
           controller: controller,
           keyboardType: keyboardType,
+          obscureText: obscureText,
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
-            prefixIcon: Icon(icon, color: const Color(0xFF9CA3AF), size: 20),
+            suffixIcon: suffix,
+            prefixIcon: prefix,
+            prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             filled: true,
@@ -1086,50 +1148,6 @@ class _InputField extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _SocialAuthButton extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final Color iconColor;
-  final VoidCallback onTap;
-
-  const _SocialAuthButton({
-    required this.label,
-    required this.icon,
-    required this.iconColor,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 50,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE5E7EB), width: 1.5),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: iconColor, size: 24),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF374151),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

@@ -1,20 +1,26 @@
 import 'dart:typed_data';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../services/app_services.dart';
+import 'account_verification_reminder_service.dart';
+import '../core/api/api_client.dart';
 import '../core/offline/offline_cache.dart';
 import '../utils/constants.dart';
 import '../utils/listing_attributes.dart';
 import '../utils/listing_utils.dart';
+import '../utils/marketplace_action.dart';
 import '../utils/rdc_locations.dart';
 
 /// Façade unifiée : API + cache offline pour tous les écrans.
 class DataService {
   static final DataService _instance = DataService._internal();
   factory DataService() => _instance;
-  DataService._internal();
+  DataService._internal() {
+    ApiClient.onSessionExpired ??= handleSessionExpired;
+  }
 
   final _app = AppServices.instance;
   List<Map<String, dynamic>> _listings = [];
@@ -136,6 +142,45 @@ class DataService {
     await refreshListings();
   }
 
+  /// Met à jour stock / variantes / pause vitrine d'un produit boutique.
+  Future<void> updateListingInventory(
+    int listingId, {
+    String? attributesJson,
+    String? status,
+    int? priceCdf,
+    String? title,
+  }) async {
+    await _app.listings.updateListing(
+      listingId,
+      attributes: attributesJson,
+      status: status,
+      priceCdf: priceCdf,
+      title: title,
+    );
+    await refreshMyListings();
+    await refreshListings(mixPromoted: true);
+  }
+
+  /// Met à jour le stock d'une variante (taille/couleur) puis persiste.
+  Future<void> updateVariantStock(
+    Map<String, dynamic> listing, {
+    required int variantIndex,
+    required int stock,
+  }) async {
+    final id = int.tryParse(listing['id']?.toString() ?? '') ?? 0;
+    if (id <= 0) throw StateError('Listing invalide');
+    final attrs = ListingAttributes.decodeMap(listing['attributes']);
+    if (attrs == null) throw StateError('Pas d\'attributs catalogue');
+    final variants = ListingAttributes.catalogVariants(listing['attributes']);
+    if (variantIndex < 0 || variantIndex >= variants.length) {
+      throw StateError('Variante introuvable');
+    }
+    variants[variantIndex]['stock'] = stock < 0 ? 0 : stock;
+    attrs['variants'] = variants;
+    final json = ListingAttributes.encodeMap(attrs);
+    await updateListingInventory(id, attributesJson: json);
+  }
+
   Future<List<Map<String, dynamic>>> fetchListingInquirers(int listingId) async {
     return _app.listings.fetchInquirers(listingId);
   }
@@ -163,12 +208,17 @@ class DataService {
     );
   }
 
+  Future<Map<String, dynamic>?> fetchPublicUserProfile(int userId) async {
+    return _app.users.fetchPublicProfile(userId);
+  }
+
   Future<void> addListingToCart(
     Map<String, dynamic> listing, {
     int quantity = 1,
     String? variantSize,
     String? variantColor,
   }) async {
+    await ensureMarketplaceAccess();
     final uid = _app.currentUser?['id']?.toString();
     if (isOwnListing(listing, uid)) {
       throw Exception('Vous ne pouvez pas ajouter votre propre annonce au panier');
@@ -176,19 +226,68 @@ class DataService {
     final id = int.tryParse(listing['id']?.toString() ?? '');
     if (id == null) return;
     final official = listing['isOfficial'] == true || listing['is_official'] == true;
-    await _app.cart.add(
-      id,
-      quantity: official ? quantity : 1,
-      variantSize: variantSize,
-      variantColor: variantColor,
-    );
-    await loadCart();
+    final alreadyInCart = isInCart(id);
+    if (!alreadyInCart) {
+      _app.cartItems = [
+        ..._app.cartItems,
+        {'listing_id': id, 'quantity': official ? quantity : 1},
+      ];
+    }
+    try {
+      await _app.cart.add(
+        id,
+        quantity: official ? quantity : 1,
+        variantSize: variantSize,
+        variantColor: variantColor,
+      );
+      await loadCart();
+    } catch (e) {
+      if (!alreadyInCart) {
+        _app.cartItems.removeWhere((e) {
+          final lid = e['listing_id'] as int? ?? int.tryParse(e['listing_id']?.toString() ?? '');
+          return lid == id;
+        });
+      }
+      await _onMarketplaceAuthFailure(e);
+      throw _mapMarketplaceError(e);
+    }
   }
 
   Future<void> refreshUser() async {
     await _app.refreshUser();
     _syncUserDisplayFields();
   }
+
+  Future<void> updateProfilePhone(String phoneE164) async {
+    final user = await _app.users.updateProfile(phoneE164: phoneE164);
+    _applyUserFromApi(user);
+  }
+
+  Future<void> setAccountPassword(String password) async {
+    final user = await _app.users.setAccountPassword(password);
+    _applyUserFromApi(user);
+  }
+
+  bool needsPassword([Map<String, dynamic>? user]) {
+    final u = user ?? _app.currentUser;
+    if (u == null) return false;
+    return u['needs_password'] == true;
+  }
+
+  bool needsPhone([Map<String, dynamic>? user]) {
+    final u = user ?? _app.currentUser;
+    if (u == null) return false;
+    return u['needs_phone'] == true;
+  }
+
+  bool needsAccountSetup([Map<String, dynamic>? user]) {
+    final u = user ?? _app.currentUser;
+    if (u == null) return false;
+    if (u['needs_account_setup'] == true) return true;
+    return needsPassword(u) || needsPhone(u);
+  }
+
+  bool isAccountComplete([Map<String, dynamic>? user]) => !needsAccountSetup(user);
 
   /// Nom affiché pour le profil (jamais « Non connecté » si session valide).
   String profileDisplayName([Map<String, dynamic>? user]) {
@@ -203,13 +302,87 @@ class DataService {
     return 'Mon profil';
   }
 
-  Future<Map<String, dynamic>> sendOtp(String phoneE164) async {
-    final r = await _app.auth.sendOtp(phoneE164);
+  Future<void> registerAccount({
+    required String email,
+    required String password,
+    required String phoneE164,
+    required String displayName,
+  }) async {
+    await _app.auth.registerAccount(
+      email: email,
+      password: password,
+      phoneE164: phoneE164,
+      displayName: displayName,
+    );
+    await refreshUser();
+    _syncUserDisplayFields();
+    _myListingsCache = [];
+    await refreshMyListings();
+  }
+
+  Future<Map<String, dynamic>> sendEmailVerificationCode() async {
+    return _app.users.sendEmailVerificationCode();
+  }
+
+  Future<void> verifyMyEmail(String code) async {
+    final user = await _app.users.verifyEmailWithCode(code);
+    _applyUserFromApi(user);
+  }
+
+  Future<Map<String, dynamic>> requestPasswordReset(String email) async {
+    return _app.auth.requestPasswordReset(email);
+  }
+
+  Future<void> resetPasswordWithCode({
+    required String email,
+    required String code,
+    required String newPassword,
+  }) async {
+    await _app.auth.resetPasswordWithCode(
+      email: email,
+      code: code,
+      newPassword: newPassword,
+    );
+    await refreshUser();
+    _syncUserDisplayFields();
+    _myListingsCache = [];
+    await refreshMyListings();
+  }
+
+  Future<void> loginWithPassword({
+    required String email,
+    required String password,
+  }) async {
+    await _app.auth.loginWithPassword(email: email, password: password);
+    await refreshUser();
+    _syncUserDisplayFields();
+    _myListingsCache = [];
+    await refreshMyListings();
+  }
+
+  Future<Map<String, dynamic>> sendOtp(
+    String phoneE164, {
+    required String purpose,
+    String? displayName,
+  }) async {
+    final r = await _app.auth.sendOtp(
+      phoneE164,
+      purpose: purpose,
+      displayName: displayName,
+    );
     return Map<String, dynamic>.from(r);
   }
 
-  Future<Map<String, dynamic>> sendEmailOtp(String email, {String? displayName}) async {
-    final r = await _app.auth.sendEmailOtp(email, displayName: displayName);
+  Future<Map<String, dynamic>> sendEmailOtp(
+    String email, {
+    required String purpose,
+    String? displayName,
+  }) async {
+    final r = await _app.auth.sendEmailOtp(
+      email,
+      purpose: purpose,
+      displayName: displayName,
+    );
     return Map<String, dynamic>.from(r);
   }
 
@@ -244,14 +417,70 @@ class DataService {
 
   Future<bool> hasApiSession() => _app.auth.hasSession();
 
-  /// Compte réel (OTP téléphone) — pas visiteur Google/dev.
+  /// Panier / favoris : session valide requise.
+  Future<void> ensureMarketplaceAccess() async {
+    if (!await _app.auth.hasSession()) {
+      throw MarketplaceBlockedException(
+        'Connectez-vous pour ajouter au panier ou enregistrer un favori.',
+        reason: MarketplaceBlockReason.loginRequired,
+      );
+    }
+    if (_app.currentUser == null) {
+      try {
+        await refreshUser();
+      } catch (_) {}
+    }
+    if (needsAccountSetup()) {
+      throw MarketplaceBlockedException(
+        'Finalisez votre compte (téléphone et mot de passe) pour continuer.',
+        reason: MarketplaceBlockReason.finalizeAccount,
+      );
+    }
+  }
+
+  Future<void> handleSessionExpired() async {
+    await _app.auth.logout();
+    _app.currentUser = null;
+    _app.cartItems = [];
+    _app.favoriteIds = {};
+    _favoriteListings = [];
+  }
+
+  Object _mapMarketplaceError(Object error) {
+    if (error is MarketplaceBlockedException) return error;
+    if (error is DioException && error.response?.statusCode == 401) {
+      return MarketplaceBlockedException(
+        'Session expirée. Reconnectez-vous pour continuer.',
+        reason: MarketplaceBlockReason.sessionExpired,
+      );
+    }
+    return error;
+  }
+
+  Future<void> _onMarketplaceAuthFailure(Object error) async {
+    if (error is DioException && error.response?.statusCode == 401) {
+      await handleSessionExpired();
+    }
+  }
+
+  /// Compte authentifié (email, Google/Apple ou téléphone réel).
   Future<bool> hasVerifiedProfile() async {
     if (!await hasApiSession()) return false;
     final u = _app.currentUser;
     if (u == null) return false;
     final phone = u['phone_e164']?.toString() ?? '';
     if (phone == '+243000000000') return false;
-    return u['is_phone_verified'] == true;
+    if (u['account_verified'] == true || u['email_verified'] == true) return true;
+    if (u['is_phone_verified'] == true && u['needs_phone'] != true) return true;
+    return false;
+  }
+
+  String? displayPhone(Map<String, dynamic>? u) {
+    if (u == null) return null;
+    final phone = u['phone_e164']?.toString();
+    if (phone != null && phone.isNotEmpty) return phone;
+    if (u['needs_phone'] == true) return null;
+    return null;
   }
 
   List<Map<String, dynamic>> get notifications => List.unmodifiable(_notifications);
@@ -268,9 +497,24 @@ class DataService {
         .map((e) => Map<String, dynamic>.from(e as Map))
         .toList();
     _unreadNotifications = (data['unread_count'] as int?) ?? 0;
+
+    final local = await AccountVerificationReminderService.buildIfDue(_app.currentUser);
+    AccountVerificationReminderService.mergeIntoList(_notifications, local);
+    if (local != null && local['is_read'] != true) {
+      _unreadNotifications += 1;
+    }
   }
 
   Future<void> markNotificationRead(int id) async {
+    if (id == AccountVerificationReminderService.localNotificationId) {
+      await AccountVerificationReminderService.markDismissedForCycle();
+      final i = _notifications.indexWhere((n) => n['id'] == id);
+      if (i >= 0) {
+        _notifications[i]['is_read'] = true;
+      }
+      _unreadNotifications = _notifications.where((n) => n['is_read'] != true).length;
+      return;
+    }
     await _app.notifications.markRead(id);
     final i = _notifications.indexWhere((n) => n['id'] == id);
     if (i >= 0) {
@@ -281,6 +525,14 @@ class DataService {
 
   Future<void> markAllNotificationsRead() async {
     await _app.notifications.markAllRead();
+    if (_notifications.any(
+      (n) =>
+          n['type'] == 'account_verification' &&
+          n['is_local'] == true &&
+          n['is_read'] != true,
+    )) {
+      await AccountVerificationReminderService.markDismissedForCycle();
+    }
     for (final n in _notifications) {
       n['is_read'] = true;
     }
@@ -295,7 +547,7 @@ class DataService {
   void _syncUserDisplayFields() {
     if (_app.currentUser == null) return;
     _app.currentUser!['name'] = profileDisplayName(_app.currentUser);
-    _app.currentUser!['phone'] = _app.currentUser!['phone_e164'];
+    _app.currentUser!['phone'] = displayPhone(_app.currentUser);
     final avatar = _app.currentUser!['avatar_url']?.toString();
     if (avatar != null && avatar.isNotEmpty) {
       _app.currentUser!['avatarUrl'] = _app.api.absoluteUrl(avatar);
@@ -373,6 +625,13 @@ class DataService {
     String? quartier,
     String? avenue,
     String? numero,
+    String? vehicleYear,
+    String? mileageKm,
+    String? fuel,
+    String? surfaceSqm,
+    String? rooms,
+    String? listingTypeAttr,
+    String? vehicleModel,
   }) async {
     if (!await hasApiSession()) {
       throw Exception('SESSION_REQUIRED');
@@ -389,6 +648,13 @@ class DataService {
       condition: condition,
       brand: brand,
       color: color,
+      vehicleYear: vehicleYear,
+      mileageKm: mileageKm,
+      fuel: fuel,
+      surfaceSqm: surfaceSqm,
+      rooms: rooms,
+      listingType: listingTypeAttr,
+      vehicleModel: vehicleModel,
     );
     final attrs = attributes.isEmpty ? null : attributes;
     final id = await _app.listings.createListing(
@@ -621,14 +887,38 @@ class DataService {
   List<Map<String, dynamic>> getAllListings() =>
       List.unmodifiable([..._listings, ..._officialListingsCache]);
 
+  /// Hydrate le feed depuis le cache local (affichage instantané).
+  void hydrateListingsFromCache() {
+    final cached = OfflineCache.getCachedListings();
+    if (cached == null || cached.isEmpty) return;
+    final uid = _app.currentUser?['id']?.toString();
+    final fav = _app.favoriteIds;
+    final normalized = normalizeListings(cached, favoriteIds: fav, currentUserId: uid);
+    final pro = normalized.where(isProListing).toList();
+    final byId = <String, Map<String, dynamic>>{};
+    for (final l in pro) {
+      final id = l['id']?.toString();
+      if (id != null && id.isNotEmpty) byId[id] = l;
+    }
+    _officialListingsCache = pro;
+    _listings = normalized.where((l) {
+      final id = l['id']?.toString() ?? '';
+      return id.isEmpty || !byId.containsKey(id);
+    }).toList();
+  }
+
   /// Recharge les fils accueil Particulier et Professionnel séparément.
   Future<void> refreshHomeFeeds({String? province}) async {
     final uid = _app.currentUser?['id']?.toString();
     final fav = _app.favoriteIds;
-    final rawAll = await _app.listings.fetchListings(province: province, mixPromoted: false);
+    final results = await Future.wait([
+      _app.listings.fetchListings(province: province, mixPromoted: false),
+      _app.listings.fetchListings(province: province, isOfficial: true),
+    ]);
+    final rawAll = results[0];
+    final rawOfficial = results[1];
     var normalized = normalizeListings(rawAll, favoriteIds: fav, currentUserId: uid);
 
-    final rawOfficial = await _app.listings.fetchListings(province: province, isOfficial: true);
     final officialFromApi = normalizeListings(rawOfficial, favoriteIds: fav, currentUserId: uid);
     final proFromAll = normalized.where(isProListing).toList();
     final byId = <String, Map<String, dynamic>>{};
@@ -827,6 +1117,10 @@ class DataService {
         'listingImageUrl': c['listing_image_url']?.toString(),
         'isOfficialPeer': official,
         'isTeamPeer': team,
+        'peerAccountVerified':
+            c['peer_account_verified'] == true || c['peer_email_verified'] == true,
+        'peerEmailVerified':
+            c['peer_account_verified'] == true || c['peer_email_verified'] == true,
         'userName': c['peer_name'] ?? 'Utilisateur',
         'lastMessage': c['last_message'] ?? '',
         'lastMessageTime': c['last_at'],
@@ -836,6 +1130,16 @@ class DataService {
   }
 
   List<Map<String, dynamic>> getUserConversations(String userId) => _conversations;
+
+  /// Messages marketplace non lus (hors centre d'aide).
+  int get unreadMessageCount {
+    var total = 0;
+    for (final c in _conversations) {
+      if (c['isTeamPeer'] == true) continue;
+      total += (c['unreadCount'] as int?) ?? 0;
+    }
+    return total;
+  }
 
   Future<void> loadThread(
     String peerId, {
@@ -1068,6 +1372,58 @@ class DataService {
     return _app.orders.listMyOrders();
   }
 
+  /// Nombre de personnes distinctes avec qui une opération (achat/vente) a été finalisée.
+  Future<int> countFinalizedOperationPeople() async {
+    final peers = <String>{};
+    final me = _app.currentUser?['id']?.toString();
+
+    for (final c in _conversations) {
+      if (c['isTeamPeer'] == true) continue;
+      final last = (c['lastMessage']?.toString() ?? '').toLowerCase();
+      if (last.contains('vente confirmée') ||
+          last.contains('merci pour votre achat') ||
+          last.contains('acheteur a confirmé') ||
+          last.contains('reversement programmé') ||
+          last.contains('laissez un avis')) {
+        final pid = c['peer_id']?.toString();
+        if (pid != null && pid.isNotEmpty && pid != me) peers.add(pid);
+      }
+    }
+
+    for (final l in _myListingsCache) {
+      if (l['status']?.toString() == 'sold') {
+        final buyerId = l['buyer_id']?.toString();
+        if (buyerId != null && buyerId.isNotEmpty && buyerId != me) peers.add(buyerId);
+      }
+    }
+
+    try {
+      final orders = await fetchMyOrders();
+      for (final o in orders) {
+        if (o['status']?.toString() != 'succes') continue;
+        final lid = o['listing_id']?.toString();
+        String? sellerId;
+        for (final l in _listings) {
+          if (l['id']?.toString() == lid) {
+            sellerId = l['seller_id']?.toString() ?? l['sellerId']?.toString();
+            break;
+          }
+        }
+        if (sellerId == null) {
+          for (final l in _myListingsCache) {
+            if (l['id']?.toString() == lid) {
+              sellerId = l['seller_id']?.toString() ?? l['sellerId']?.toString();
+              break;
+            }
+          }
+        }
+        if (sellerId != null && sellerId.isNotEmpty && sellerId != me) peers.add(sellerId);
+      }
+    } catch (_) {}
+
+    return peers.length;
+  }
+
   Future<Map<String, dynamic>?> fetchKycStatus() async {
     if (!await _app.auth.hasSession()) return null;
     return _app.kyc.fetchMyApplication();
@@ -1119,8 +1475,9 @@ class DataService {
     String? quartier,
     bool? officialOnly,
     double? minSellerRating,
+    List<Map<String, dynamic>>? source,
   }) {
-    var results = _listings;
+    var results = List<Map<String, dynamic>>.from(source ?? _listings);
     if (query != null && query.isNotEmpty) {
       final q = query.toLowerCase();
       results = results
@@ -1141,15 +1498,10 @@ class DataService {
     }
     if (minPrice != null || maxPrice != null) {
       final min = minPrice ?? 0;
-      final max = maxPrice ?? double.infinity;
-      results = results.where((l) {
-        final p = l['price_cdf'] is int
-            ? (l['price_cdf'] as int).toDouble()
-            : double.tryParse(l['price_cdf']?.toString() ?? '') ??
-                double.tryParse(l['price'].toString().replaceAll(RegExp(r'[^0-9]'), '')) ??
-                0;
-        return p >= min && p <= max;
-      }).toList();
+      final max = maxPrice ?? 10000000;
+      results = results
+          .where((l) => listingMatchesPriceRange(l, minPrice: min, maxPrice: max))
+          .toList();
     }
     if (location != null && location.isNotEmpty) {
       results = results
@@ -1218,6 +1570,8 @@ class DataService {
   }
 
   List<Map<String, dynamic>> get cartItems => List.unmodifiable(_app.cartItems);
+
+  Set<int> get favoriteIds => _app.favoriteIds;
 
   List<Map<String, dynamic>> getUserFavorites(String userId) => getFavoriteListings();
 
@@ -1317,14 +1671,29 @@ class DataService {
   }
 
   Future<void> toggleFavorite(String listingId) async {
+    await ensureMarketplaceAccess();
     final id = int.tryParse(listingId);
     if (id == null) return;
-    if (_app.favoriteIds.contains(id)) {
-      await _app.favorites.remove(id);
+    final wasFavorite = _app.favoriteIds.contains(id);
+    if (wasFavorite) {
       _app.favoriteIds.remove(id);
     } else {
-      await _app.favorites.add(id);
       _app.favoriteIds.add(id);
+    }
+    try {
+      if (wasFavorite) {
+        await _app.favorites.remove(id);
+      } else {
+        await _app.favorites.add(id);
+      }
+    } catch (e) {
+      if (wasFavorite) {
+        _app.favoriteIds.add(id);
+      } else {
+        _app.favoriteIds.remove(id);
+      }
+      await _onMarketplaceAuthFailure(e);
+      throw _mapMarketplaceError(e);
     }
   }
 
@@ -1334,14 +1703,30 @@ class DataService {
       _app.favoriteIds = (await _app.favorites.listIds()).toSet();
       final raw = await _app.favorites.listItems();
       _favoriteListings = raw
-          .map((item) => normalizeListing({
-                'id': item['id'],
-                'title': item['title'],
-                'price_cdf': item['price_cdf'],
-                'primary_image_url': item['primary_image_url'],
-                'city': item['city'],
-                'isFavorite': true,
-              }, favoriteIds: _app.favoriteIds))
+          .map((item) {
+            final idStr = item['id']?.toString();
+            Map<String, dynamic>? cached;
+            if (idStr != null) {
+              for (final l in _listings) {
+                if (l['id']?.toString() == idStr) {
+                  cached = l;
+                  break;
+                }
+              }
+            }
+            final imageUrl = item['primary_image_url'] ??
+                cached?['primary_image_url'] ??
+                cached?['imageUrl'];
+            return normalizeListing({
+              'id': item['id'],
+              'title': item['title'],
+              'price_cdf': item['price_cdf'],
+              'primary_image_url': imageUrl,
+              'city': item['city'],
+              'seller_id': item['seller_id'],
+              'isFavorite': true,
+            }, favoriteIds: _app.favoriteIds);
+          })
           .toList();
     } catch (_) {}
   }
@@ -1355,13 +1740,44 @@ class DataService {
   }
 
   Future<void> addToCart(int listingId, {int quantity = 1}) async {
-    await _app.cart.add(listingId, quantity: quantity);
-    await loadCart();
+    await ensureMarketplaceAccess();
+    final alreadyInCart = isInCart(listingId);
+    if (!alreadyInCart) {
+      _app.cartItems = [
+        ..._app.cartItems,
+        {'listing_id': listingId, 'quantity': quantity},
+      ];
+    }
+    try {
+      await _app.cart.add(listingId, quantity: quantity);
+      await loadCart();
+    } catch (e) {
+      if (!alreadyInCart) {
+        _app.cartItems.removeWhere((e) {
+          final lid = e['listing_id'] as int? ?? int.tryParse(e['listing_id']?.toString() ?? '');
+          return lid == listingId;
+        });
+      }
+      await _onMarketplaceAuthFailure(e);
+      throw _mapMarketplaceError(e);
+    }
   }
 
   Future<void> removeFromCart(int listingId) async {
-    await _app.cart.remove(listingId);
-    await loadCart();
+    await ensureMarketplaceAccess();
+    final backup = _app.cartItems.map((e) => Map<String, dynamic>.from(e)).toList();
+    _app.cartItems.removeWhere((e) {
+      final lid = e['listing_id'] as int? ?? int.tryParse(e['listing_id']?.toString() ?? '');
+      return lid == listingId;
+    });
+    try {
+      await _app.cart.remove(listingId);
+      await loadCart();
+    } catch (e) {
+      _app.cartItems = backup;
+      await _onMarketplaceAuthFailure(e);
+      throw _mapMarketplaceError(e);
+    }
   }
 
   Future<void> updateCartQty(int listingId, int quantity, {int? maxQuantity}) async {
@@ -1386,8 +1802,8 @@ class DataService {
     _app.cartItems[idx] = Map<String, dynamic>.from(_app.cartItems[idx])..['quantity'] = quantity;
   }
 
-  Future<void> updateProfile({String? displayName}) async {
-    final user = await _app.users.updateProfile(displayName: displayName);
+  Future<void> updateProfile({String? displayName, String? profileBio}) async {
+    final user = await _app.users.updateProfile(displayName: displayName, profileBio: profileBio);
     if (user.isNotEmpty) {
       _applyUserFromApi(user);
     } else {
@@ -1419,6 +1835,13 @@ class DataService {
   bool isFavorite(String listingId) {
     final id = int.tryParse(listingId);
     return id != null && _app.favoriteIds.contains(id);
+  }
+
+  bool isInCart(int listingId) {
+    return _app.cartItems.any((e) {
+      final lid = e['listing_id'] as int? ?? int.tryParse(e['listing_id']?.toString() ?? '');
+      return lid == listingId;
+    });
   }
 
   Future<Map<String, dynamic>> createTransaction({

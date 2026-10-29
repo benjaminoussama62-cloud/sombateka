@@ -4,6 +4,8 @@ import 'package:uuid/uuid.dart';
 import '../../config/api_config.dart';
 import 'token_storage.dart';
 
+typedef SessionExpiredHandler = Future<void> Function();
+
 class ApiClient {
   ApiClient(this._tokens) {
     _dio = Dio(
@@ -23,6 +25,24 @@ class ApiClient {
           }
           handler.next(options);
         },
+        onError: (error, handler) async {
+          if (error.response?.statusCode == 401 && !_handling401) {
+            _handling401 = true;
+            try {
+              final cb = onSessionExpired;
+              if (cb != null) {
+                await cb();
+              } else {
+                await _tokens.clear();
+              }
+            } catch (_) {
+              await _tokens.clear();
+            } finally {
+              _handling401 = false;
+            }
+          }
+          handler.next(error);
+        },
       ),
     );
   }
@@ -30,6 +50,10 @@ class ApiClient {
   final TokenStorage _tokens;
   late final Dio _dio;
   final _uuid = const Uuid();
+  bool _handling401 = false;
+
+  /// Appelé une fois sur 401 (clear session / navigation).
+  static SessionExpiredHandler? onSessionExpired;
 
   Dio get dio => _dio;
 

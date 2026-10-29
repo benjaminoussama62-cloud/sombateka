@@ -7,6 +7,8 @@ backend/.pytest_cache/
 backend/.mypy_cache/
 backend/.ruff_cache/
 backend/*.sqlite
+backend/*.db
+backend/test_reg*.db
 backend/.env.production
 backend/secrets-beta.local.txt
 backend/uploads/
@@ -17,6 +19,7 @@ node_modules/
 # Flutter / Dart
 mobile/.dart_tool/
 mobile/build/
+web-dist/
 mobile/.flutter-plugins
 mobile/.flutter-plugins-dependencies
 mobile/.packages

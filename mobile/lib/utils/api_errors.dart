@@ -15,9 +15,23 @@ String friendlyApiError(Object error, {String fallback = 'Une erreur est survenu
       }
     }
     final code = error.response?.statusCode;
+    if (code == 401) {
+      return 'Connectez-vous pour effectuer cette action.';
+    }
     if (code == 400) return 'Requête invalide. Vérifiez les informations.';
     if (code == 403) return 'Action non autorisée.';
     if (code == 404) return 'Élément introuvable.';
+    if (code == 409) return 'Ces informations sont déjà utilisées par un autre compte.';
+    if (code == 429) return 'Trop de tentatives. Patientez une minute puis réessayez.';
+    if (code != null && code >= 500) {
+      return 'Service temporairement indisponible. Réessayez dans quelques minutes.';
+    }
+    if (error.type == DioExceptionType.connectionError ||
+        error.type == DioExceptionType.connectionTimeout ||
+        error.type == DioExceptionType.sendTimeout ||
+        error.type == DioExceptionType.receiveTimeout) {
+      return 'Connexion au serveur impossible. Vérifiez votre réseau et réessayez.';
+    }
   }
   final raw = error.toString();
   if (raw.contains('listing_id requis') || raw.contains('Annonce introuvable')) {

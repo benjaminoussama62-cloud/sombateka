@@ -33,8 +33,7 @@ def main() -> None:
             user.role = UserRole.super_admin
             user.is_banned = False
             user.is_phone_verified = True
-            if not user.display_name:
-                user.display_name = "Administrateur SombaTeka"
+            user.display_name = "Administrateur SombaTeka"
             print(f"Compte mis a jour: {DEV_ADMIN_PHONE} (id={user.id}, role={user.role.value})")
 
         pwd = settings.admin_panel_password.strip() or settings.dev_login_password

@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../components/custom_top_bar.dart';
+import '../theme/premium_theme.dart';
+import '../widgets/premium_scaffold.dart';
 import '../utils/constants.dart';
 import '../services/data_service.dart';
 import '../services/payment_flow_service.dart';
 import 'chat_screen.dart';
+import '../utils/friendly_error.dart';
 
 class PaymentScreen extends StatefulWidget {
   final Map<String, dynamic> listing;
@@ -78,17 +80,25 @@ class _PaymentScreenState extends State<PaymentScreen> with TickerProviderStateM
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const CustomTopBar(
-        title: "Paiement sécurisé",
-        showBackButton: true,
+      backgroundColor: PremiumTheme.surface,
+      body: Column(
+        children: [
+          const PremiumPageHeader(
+            title: 'Paiement sécurisé',
+            subtitle: 'Mobile Money · Séquestre · Protection acheteur',
+            emoji: '💳',
+          ),
+          Expanded(
+            child: _paymentComplete
+                ? _buildSuccessView()
+                : _inStoreReserved
+                    ? _buildInStoreSuccessView()
+                    : _awaitingPayment
+                        ? _buildAwaitingPaymentView()
+                        : _buildPaymentForm(),
+          ),
+        ],
       ),
-      body: _paymentComplete
-          ? _buildSuccessView()
-          : _inStoreReserved
-              ? _buildInStoreSuccessView()
-              : _awaitingPayment
-              ? _buildAwaitingPaymentView()
-              : _buildPaymentForm(),
       bottomNavigationBar: (_paymentComplete || _awaitingPayment || _inStoreReserved) ? null : _buildBottomButton(),
     );
   }
@@ -99,6 +109,10 @@ class _PaymentScreenState extends State<PaymentScreen> with TickerProviderStateM
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const PremiumTrustBanner(
+            text: 'Votre paiement est protégé jusqu\'à confirmation de réception. Ne partagez jamais votre code PIN Mobile Money.',
+          ),
+          const SizedBox(height: 16),
           if (widget.listing['delivery_method_label'] != null)
             Container(
               width: double.infinity,
@@ -528,7 +542,9 @@ class _PaymentScreenState extends State<PaymentScreen> with TickerProviderStateM
   }
 
   Widget _buildBottomButton() {
-    return Container(
+    return SafeArea(
+      top: false,
+      child: Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.surface,
@@ -572,6 +588,7 @@ class _PaymentScreenState extends State<PaymentScreen> with TickerProviderStateM
                 ),
         ),
       ),
+    ),
     );
   }
 
@@ -954,7 +971,7 @@ class _PaymentScreenState extends State<PaymentScreen> with TickerProviderStateM
         provider: provider,
         variantSize: widget.listing['size']?.toString() ?? widget.listing['variant_size']?.toString(),
         variantColor: widget.listing['color']?.toString() ?? widget.listing['variant_color']?.toString(),
-        quantity: int.tryParse(widget.listing['quantity']?.toString() ?? '') ?? 1,
+        quantity: _quantity,
         paymentChannel: _checkoutMode,
       );
 
@@ -999,7 +1016,7 @@ class _PaymentScreenState extends State<PaymentScreen> with TickerProviderStateM
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("Paiement échoué: $e"),
+          content: Text(friendlyError(e, fallback: 'Paiement échoué. Réessayez.')),
           backgroundColor: AppColors.danger,
         ),
       );

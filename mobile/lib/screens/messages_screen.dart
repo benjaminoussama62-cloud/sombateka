@@ -1,22 +1,28 @@
 import 'package:flutter/material.dart';
 import '../services/data_service.dart';
 import '../services/onboarding_service.dart';
+import '../services/app_services.dart';
 import '../utils/constants.dart';
 import '../utils/date_format.dart';
 import '../widgets/app_tour_overlay.dart';
 import '../widgets/conversation_actions.dart';
 import 'chat_screen.dart';
 import '../theme/premium_theme.dart';
+import '../widgets/st_page_header.dart';
+import '../widgets/st_icon.dart';
+import '../widgets/st_network_image.dart';
 
 class MessagesScreen extends StatefulWidget {
   const MessagesScreen({super.key});
 
   @override
-  State<MessagesScreen> createState() => _MessagesScreenState();
+  State<MessagesScreen> createState() => MessagesScreenState();
 }
 
-class _MessagesScreenState extends State<MessagesScreen> {
+class MessagesScreenState extends State<MessagesScreen> {
   final _data = DataService();
+  bool _checking = true;
+  bool _loggedIn = false;
 
   bool get _isSeller => _data.isOfficialSeller;
 
@@ -38,15 +44,30 @@ class _MessagesScreenState extends State<MessagesScreen> {
     });
   }
 
+  Future<void> reloadConversations() => _load();
+
   Future<void> _load() async {
+    final ok = await AppServices.instance.auth.hasSession();
+    if (!ok) {
+      if (mounted) setState(() { _checking = false; _loggedIn = false; });
+      return;
+    }
     try {
       await _data.refreshConversations();
     } catch (_) {}
-    if (mounted) setState(() {});
+    if (mounted) setState(() { _checking = false; _loggedIn = true; });
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_checking) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator(color: PremiumTheme.blue)),
+      );
+    }
+    if (!_loggedIn) {
+      return _buildLoginGate(context);
+    }
     return Scaffold(
       backgroundColor: PremiumTheme.surface,
       body: Column(
@@ -59,44 +80,51 @@ class _MessagesScreenState extends State<MessagesScreen> {
   }
 
   Widget _header() {
-    return Container(
-      decoration: PremiumTheme.heroGradient,
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 12, 16),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(14),
+    final canPop = Navigator.of(context).canPop();
+    return StPageHeader(
+      child: Row(
+        children: [
+          if (canPop) ...[
+            IconButton(
+              tooltip: 'Retour',
+              onPressed: () => Navigator.of(context).pop(),
+              icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.white.withValues(alpha: 0.12),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ] else ...[
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const AppIcon(Icons.chat_bubble_rounded, size: 22, color: Colors.white),
+            ),
+            const SizedBox(width: 12),
+          ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Messages', style: PremiumTheme.display.copyWith(fontSize: 22)),
+                Text(
+                  _isSeller
+                      ? '${_marketplace.length} ventes · ${_support.length} aide'
+                      : '${_marketplace.length} achats · centre d\'aide disponible',
+                  style: PremiumTheme.body.copyWith(color: Colors.white70, fontSize: 12),
                 ),
-                child: const Text('💬', style: TextStyle(fontSize: 22)),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Messages', style: PremiumTheme.display.copyWith(fontSize: 22)),
-                    Text(
-                      _isSeller
-                          ? '${_marketplace.length} ventes · ${_support.length} aide'
-                          : '${_marketplace.length} achats · centre d\'aide en lecture seule',
-                      style: PremiumTheme.body.copyWith(color: Colors.white70, fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                onPressed: _load,
-                icon: const Icon(Icons.refresh_rounded, color: Colors.white),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+          IconButton(
+            tooltip: 'Actualiser',
+            onPressed: _load,
+            icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+          ),
+        ],
       ),
     );
   }
@@ -141,7 +169,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
       padding: const EdgeInsets.all(16),
       children: [
         if (_support.isNotEmpty) ...[
-          _sectionTitle('Centre d\'aide', 'Lecture seule · réponses officielles', Icons.support_agent_rounded),
+          _sectionTitle('Centre d\'aide', 'Écrivez à l\'équipe · réponses officielles', Icons.support_agent_rounded),
           const SizedBox(height: 8),
           ..._support.map(_supportTile),
           const SizedBox(height: 20),
@@ -185,7 +213,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
         color: const Color(0xFFEFF6FF),
         borderRadius: PremiumTheme.radiusMd,
         child: InkWell(
-          onTap: () => _openChat(c, readOnly: true),
+          onTap: () => _openChat(c, readOnly: false),
           borderRadius: PremiumTheme.radiusMd,
           child: Ink(
             padding: const EdgeInsets.all(14),
@@ -205,7 +233,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Centre d\'aide SombaTeka', style: PremiumTheme.h1.copyWith(fontSize: 14, color: PremiumTheme.blue)),
+                      Text('Maya · Centre d\'aide', style: PremiumTheme.h1.copyWith(fontSize: 14, color: PremiumTheme.blue)),
                       Text(
                         c['lastMessage']?.toString() ?? 'Aucun message',
                         maxLines: 1,
@@ -271,7 +299,13 @@ class _MessagesScreenState extends State<MessagesScreen> {
                 if (thumb.isNotEmpty)
                   ClipRRect(
                     borderRadius: BorderRadius.circular(10),
-                    child: Image.network(thumb, width: 52, height: 52, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _avatar(c)),
+                    child: StNetworkImage(
+                      url: thumb,
+                      width: 52,
+                      height: 52,
+                      fit: BoxFit.cover,
+                      errorIconSize: 22,
+                    ),
                   )
                 else
                   _avatar(c),
@@ -331,16 +365,68 @@ class _MessagesScreenState extends State<MessagesScreen> {
       MaterialPageRoute(
         builder: (_) => ChatScreen(
           peerId: peerId,
-          peerName: isTeam ? 'Centre d\'aide SombaTeka' : (c['userName']?.toString() ?? 'Utilisateur'),
+          peerName: isTeam ? 'Maya · Centre d\'aide' : (c['userName']?.toString() ?? 'Utilisateur'),
           listingId: c['listingId']?.toString(),
           listingTitle: c['listingTitle']?.toString(),
           listingImageUrl: c['listingImageUrl']?.toString(),
           isOfficialPeer: c['isOfficialPeer'] == true,
           isTeamPeer: isTeam,
+          peerAccountVerified: c['peerAccountVerified'] == true || c['peerEmailVerified'] == true,
+          peerEmailVerified: c['peerAccountVerified'] == true || c['peerEmailVerified'] == true,
           allowHelpdeskCompose: isTeam && !readOnly,
         ),
       ),
     );
     if (mounted) await _load();
+  }
+
+  Widget _buildLoginGate(BuildContext context) {
+    return Scaffold(
+      backgroundColor: PremiumTheme.surface,
+      body: Container(
+        decoration: PremiumTheme.heroGradient,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.chat_bubble_outline_rounded, size: 72, color: Colors.white.withValues(alpha: 0.92)),
+                const SizedBox(height: 20),
+                Text(
+                  'Messages réservés aux membres',
+                  style: PremiumTheme.display.copyWith(fontSize: 24, color: Colors.white),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Connectez-vous pour discuter avec les vendeurs et accéder au centre d\'aide.',
+                  style: PremiumTheme.body.copyWith(color: Colors.white70, height: 1.5),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 28),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pushNamed(context, AppRoutes.auth, arguments: {'mode': 'login'}),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: PremiumTheme.navy,
+                      shape: RoundedRectangleBorder(borderRadius: PremiumTheme.radiusLg),
+                    ),
+                    child: const Text('Se connecter', style: TextStyle(fontWeight: FontWeight.w800)),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pushNamed(context, AppRoutes.auth, arguments: {'mode': 'register'}),
+                  child: const Text('Créer un compte', style: TextStyle(color: Colors.white70)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

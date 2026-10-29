@@ -47,7 +47,7 @@ class PremiumProfileHeader extends StatelessWidget {
         decoration: const BoxDecoration(color: _bg),
         child: Container(
           width: double.infinity,
-          color: _bg,
+          decoration: PremiumTheme.heroGradient,
           padding: EdgeInsets.fromLTRB(20, topInset + 12, 20, 20),
           child: Column(
             mainAxisSize: MainAxisSize.min,

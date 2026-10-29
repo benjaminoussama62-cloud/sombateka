@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import '../config/app_config.dart';
 import '../theme/premium_theme.dart';
 import '../utils/constants.dart';
 import '../services/data_service.dart';
 import '../widgets/user_avatar.dart';
 import '../widgets/legal_document_sheet.dart';
-import 'business_hub_screen.dart';
+import '../widgets/account_setup_banner.dart';
+import '../widgets/finalize_account_sheet.dart';
+import '../widgets/account_verification_badge.dart';
 import 'chat_screen.dart';
+import '../utils/friendly_error.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -28,6 +32,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool get _isOfficialSeller =>
       _user != null &&
       (_user!['is_verified_seller'] == true || _user!['status'] == AppStatus.official);
+
+  bool get _accountVerified =>
+      _user?['account_verified'] == true || _user?['email_verified'] == true;
 
   @override
   void initState() {
@@ -77,6 +84,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (_dataService.needsAccountSetup(_user)) ...[
+              AccountSetupBanner(
+                needsPhone: _dataService.needsPhone(_user),
+                needsPassword: _dataService.needsPassword(_user),
+                onTap: () async {
+                  final ok = await showFinalizeAccountSheet(context);
+                  if (ok == true) _load();
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
             _buildAccountCard(),
             const SizedBox(height: 20),
             if (_isOfficialSeller) ...[
@@ -87,10 +105,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     'Espace Pro',
                     Icons.dashboard_rounded,
                     PremiumTheme.blue,
-                    () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const BusinessHubScreen()),
-                    ),
+                    () => Navigator.pushNamed(context, AppRoutes.businessHub),
                   ),
                   _buildMenuItem(
                     'Publier une collection',
@@ -98,12 +113,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     PremiumTheme.emerald,
                     () => Navigator.pushNamed(context, AppRoutes.officialCatalogPublish),
                   ),
-                  _buildMenuItem(
-                    'Paiements & Mobile Money',
-                    Icons.payments_rounded,
-                    PremiumTheme.gold,
-                    () => Navigator.pushNamed(context, AppRoutes.paymentSettings),
-                  ),
+                  if (AppConfig.paymentsEnabled)
+                    _buildMenuItem(
+                      'Paiements & Mobile Money',
+                      Icons.payments_rounded,
+                      PremiumTheme.gold,
+                      () => Navigator.pushNamed(context, AppRoutes.paymentSettings),
+                    ),
                 ],
               ),
               const SizedBox(height: 24),
@@ -111,6 +127,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _buildSection(
               'Compte',
               [
+                if (_dataService.needsAccountSetup(_user))
+                  _buildMenuItem(
+                    'Finaliser mon compte',
+                    Icons.assignment_turned_in_rounded,
+                    AppColors.warning,
+                    () async {
+                      final ok = await showFinalizeAccountSheet(context);
+                      if (ok == true) _load();
+                    },
+                  ),
                 _buildMenuItem(
                   'Modifier profil',
                   Icons.edit_rounded,
@@ -120,6 +146,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     if (ok == true) _load();
                   },
                 ),
+                if (!_isOfficialSeller && !_accountVerified)
+                  _buildMenuItem(
+                    'Vérifier mon compte',
+                    Icons.mark_email_read_outlined,
+                    PremiumTheme.emerald,
+                    _showAccountVerificationDialog,
+                  ),
                 if (!_isOfficialSeller)
                   _buildMenuItem(
                     'Devenir vendeur officiel',
@@ -189,8 +222,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             
             const SizedBox(height: 24),
             
-            // Payment section
-            if (!_isOfficialSeller)
+            // Payment section (masqué jusqu'à OOO)
+            if (!_isOfficialSeller && AppConfig.paymentsEnabled)
               _buildSection(
                 "Paiement",
                 [
@@ -210,8 +243,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ],
               ),
-            if (!_isOfficialSeller) const SizedBox(height: 24),
-            if (_isOfficialSeller)
+            if (!_isOfficialSeller && AppConfig.paymentsEnabled) const SizedBox(height: 24),
+            if (_isOfficialSeller && AppConfig.paymentsEnabled)
               _buildSection(
                 'Commandes',
                 [
@@ -227,31 +260,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
             
             // Support section
             _buildSection(
-              "Aide",
+              "Aide & support",
               [
                 _buildMenuItem(
-                  "Centre d'aide",
-                  Icons.help_rounded,
-                  AppColors.textPrimary,
+                  "Centre d'aide · Assistant",
+                  Icons.smart_toy_rounded,
+                  PremiumTheme.blue,
                   () {
-                    _showHelpCenter();
-                  },
-                ),
-                _buildMenuItem(
-                  "Contacter le support",
-                  Icons.support_agent_rounded,
-                  AppColors.primary,
-                  () {
-                    _showSupportContact();
+                    _openTeamChat();
                   },
                 ),
                 _buildMenuItem(
                   "Signaler un problème",
                   Icons.report_rounded,
                   AppColors.danger,
-                  () {
-                    _showReportIssue();
-                  },
+                  _openTeamChat,
                 ),
               ],
             ),
@@ -276,6 +299,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   AppColors.textPrimary,
                   () {
                     _showPrivacyPolicy();
+                  },
+                ),
+                _buildMenuItem(
+                  "Cookies & traceurs",
+                  Icons.cookie_rounded,
+                  AppColors.textPrimary,
+                  () {
+                    LegalDocumentSheet.showCookies(context);
                   },
                 ),
               ],
@@ -348,12 +379,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     return Container(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [PremiumTheme.navy, Color(0xFF1E3A8A), PremiumTheme.blue],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+      decoration: StGlowDecoration(
         borderRadius: PremiumTheme.radiusLg,
         boxShadow: PremiumTheme.softShadow,
       ),
@@ -397,6 +423,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             child: Text(kycLabel, style: TextStyle(color: kycColor, fontWeight: FontWeight.w700, fontSize: 11)),
           ),
+          if (!_isOfficialSeller) ...[
+            const SizedBox(height: 10),
+            AccountVerificationBadge(verified: _accountVerified, lightOnDark: true),
+            if (!_accountVerified)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'Confirmez votre compte par e-mail pour rassurer les acheteurs qui vous contactent.',
+                  style: PremiumTheme.body.copyWith(color: Colors.white60, fontSize: 11, height: 1.35),
+                ),
+              ),
+          ],
           const SizedBox(height: 14),
           Row(
             children: [
@@ -418,10 +456,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: ElevatedButton(
                   onPressed: () async {
                     if (_isOfficialSeller) {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const BusinessHubScreen()),
-                      );
+                      await Navigator.pushNamed(context, AppRoutes.businessHub);
                     } else {
                       await Navigator.pushNamed(context, AppRoutes.officialSeller);
                     }
@@ -446,6 +481,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       decoration: PremiumTheme.heroGradient,
       child: SafeArea(
         bottom: false,
+        minimum: EdgeInsets.zero,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(8, 8, 16, 16),
           child: Row(
@@ -510,23 +546,131 @@ class _SettingsScreenState extends State<SettingsScreen> {
           color: color.withOpacity(0.1),
           borderRadius: BorderRadius.circular(12),
         ),
-        child: Icon(icon, color: color, size: 24),
+        child: Icon(icon, color: color, size: 22),
       ),
       title: Text(
         title,
-        style: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-          color: AppColors.textPrimary,
-        ),
+        style: PremiumTheme.label.copyWith(fontSize: 15, color: PremiumTheme.textDark),
       ),
-      trailing: Icon(
+      trailing: const Icon(
         Icons.chevron_right_rounded,
-        color: AppColors.textSecondary,
+        color: PremiumTheme.textMuted,
         size: 20,
       ),
       onTap: onTap,
     );
+  }
+
+  void _showAccountVerificationDialog() {
+    final email = _user?['email']?.toString().trim() ?? '';
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ajoutez d\'abord une adresse e-mail dans Modifier profil.')),
+      );
+      return;
+    }
+    final codeController = TextEditingController();
+    var sending = false;
+    var verifying = false;
+    var codeSent = false;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Vérifier mon compte'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Un code sera envoyé à $email pour confirmer que ce compte vous appartient. Le badge « Compte vérifié » sera visible sur votre profil.',
+                style: PremiumTheme.body.copyWith(fontSize: 13),
+              ),
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                onPressed: sending
+                    ? null
+                    : () async {
+                        setDialogState(() => sending = true);
+                        try {
+                          final r = await _dataService.sendEmailVerificationCode();
+                          if (!ctx.mounted) return;
+                          if (r['already_verified'] == true) {
+                            Navigator.pop(ctx);
+                            await _load();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Votre compte est déjà vérifié.')),
+                            );
+                            return;
+                          }
+                          setDialogState(() => codeSent = true);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Code envoyé — vérifiez votre boîte e-mail.')),
+                          );
+                        } catch (e) {
+                          if (!ctx.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(friendlyError(e))),
+                          );
+                        } finally {
+                          if (ctx.mounted) setDialogState(() => sending = false);
+                        }
+                      },
+                icon: sending
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.send_rounded, size: 18),
+                label: Text(codeSent ? 'Renvoyer le code' : 'Recevoir le code'),
+              ),
+              if (codeSent) ...[
+                const SizedBox(height: 14),
+                TextField(
+                  controller: codeController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Code reçu par e-mail',
+                    hintText: '6 chiffres',
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fermer')),
+            if (codeSent)
+              FilledButton(
+                onPressed: verifying || codeController.text.trim().length < 4
+                    ? null
+                    : () async {
+                        setDialogState(() => verifying = true);
+                        try {
+                          await _dataService.verifyMyEmail(codeController.text.trim());
+                          if (!ctx.mounted) return;
+                          Navigator.pop(ctx);
+                          await _load();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Compte vérifié — badge visible sur votre profil.'),
+                              backgroundColor: AppColors.secondary,
+                            ),
+                          );
+                        } catch (e) {
+                          if (!ctx.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(friendlyError(e))),
+                          );
+                        } finally {
+                          if (ctx.mounted) setDialogState(() => verifying = false);
+                        }
+                      },
+                child: verifying
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Text('Confirmer'),
+              ),
+          ],
+        ),
+      ),
+    ).then((_) => codeController.dispose());
   }
 
   void _deleteAccount() {
@@ -925,7 +1069,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur: $e'), backgroundColor: AppColors.danger),
+        SnackBar(content: Text(friendlyError(e)), backgroundColor: AppColors.danger),
       );
       return;
     }
@@ -993,7 +1137,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur: $e'), backgroundColor: AppColors.danger),
+        SnackBar(content: Text(friendlyError(e)), backgroundColor: AppColors.danger),
       );
     }
   }
@@ -1050,9 +1194,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Column(
                   children: [
                     _supportHubTile(
-                      icon: Icons.chat_rounded,
-                      title: 'Écrire au support',
-                      subtitle: 'Posez votre question — réponse sous le nom SombaTeka',
+                      icon: Icons.smart_toy_rounded,
+                      title: 'Assistant SombaTeka',
+                      subtitle: 'Bot d\'aide instantané — puis message humain si besoin',
                       onTap: () {
                         Navigator.pop(ctx);
                         _openTeamChat();
@@ -1127,68 +1271,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _showReportIssue() {
-    final TextEditingController _issueController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Signaler un problème"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text("Décrivez le problème que vous rencontrez:"),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _issueController,
-              maxLines: 4,
-              decoration: const InputDecoration(
-                hintText: "Description du problème...",
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              decoration: const InputDecoration(
-                labelText: "Type de problème",
-                border: OutlineInputBorder(),
-              ),
-              items: [
-                'Bug technique',
-                'Problème de paiement',
-                'Compte utilisateur',
-                'Autre',
-              ].map((String value) {
-                return DropdownMenuItem<String>(
-                  value: value,
-                  child: Text(value),
-                );
-              }).toList(),
-              onChanged: (value) {},
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Annuler"),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text("Problème signalé avec succès"),
-                  backgroundColor: AppColors.secondary,
-                ),
-              );
-            },
-            child: const Text("Envoyer"),
-          ),
-        ],
-      ),
-    );
-  }
+  void _showReportIssue() => _openTeamChat();
 
   void _showTermsOfService() {
     LegalDocumentSheet.showTerms(context);

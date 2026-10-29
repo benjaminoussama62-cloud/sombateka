@@ -19,6 +19,7 @@ from app.services.trash_service import (
     purge_trash_item,
     restore_trash_item,
 )
+from app.settings import settings
 
 router = APIRouter(prefix="/admin/trash", tags=["admin-trash"])
 
@@ -116,6 +117,8 @@ def reset_beta_data(
     staff: User = Depends(require_super_admin),
     db: Session = Depends(get_db),
 ) -> dict:
+    if settings.is_production:
+        raise HTTPException(status_code=403, detail="Reset beta désactivé en production")
     from app.services.data_reset import reset_all_except_super_admins
 
     summary = reset_all_except_super_admins(db)

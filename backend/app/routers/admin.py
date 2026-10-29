@@ -1363,3 +1363,40 @@ def admin_refund_buyer(
     )
     db.commit()
     return {"ok": True, "status": order.status.value}
+
+
+@router.get("/merchant/status")
+def admin_merchant_status(
+    db: Session = Depends(get_db),
+    staff: User = Depends(require_permission(PERM_LISTINGS_VIEW)),
+) -> dict:
+    """État Google Merchant Center (feed + Content API)."""
+    from app.services.google_merchant import status_snapshot
+
+    return status_snapshot(db)
+
+
+@router.post("/merchant/sync")
+def admin_merchant_sync(
+    staff: User = Depends(require_permission(PERM_LISTINGS_MODERATE)),
+) -> dict:
+    """Force un sync Content API de tout le catalogue."""
+    from app.services.google_merchant import content_api_configured
+
+    if not content_api_configured():
+        return {
+            "ok": False,
+            "detail": "Content API non configurée — le feed URL reste actif. Voir docs/GOOGLE_MERCHANT_CENTER.md",
+            "feed_xml": "https://sombatekaonline.com/feeds/google-merchant.xml",
+            "feed_tsv": "https://sombatekaonline.com/feeds/google-merchant.tsv",
+        }
+    try:
+        from app.tasks.merchant import sync_all_products
+
+        sync_all_products.delay()
+        return {"ok": True, "queued": True}
+    except Exception:
+        from app.tasks.merchant import sync_all_products
+
+        result = sync_all_products()
+        return {"ok": True, "queued": False, "result": result}

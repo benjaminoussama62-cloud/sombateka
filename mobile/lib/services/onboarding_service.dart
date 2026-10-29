@@ -41,14 +41,14 @@ class OnboardingService {
       AppTourStep(
         emoji: '🔔',
         title: 'Restez informé',
-        body: 'Les notifications et le panier sont accessibles en haut à droite — un badge indique les nouveautés.',
+        body: 'La cloche en haut affiche vos notifications. Le panier et les messages sont dans la barre du bas — badge rouge si non lus.',
       ),
     ],
     AppTourPage.cart: [
       AppTourStep(
         emoji: '🛒',
         title: 'Votre panier',
-        body: 'Ajoutez plusieurs articles, vérifiez les prix puis payez en Mobile Money en toute sécurité.',
+        body: 'Ajoutez plusieurs articles, vérifiez les prix puis contactez les vendeurs pour convenir du paiement.',
       ),
     ],
     AppTourPage.publish: [

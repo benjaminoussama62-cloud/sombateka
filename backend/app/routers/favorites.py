@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
 from app.deps import get_current_user
 from app.models import Favorite, Listing, ListingStatus, User
 from app.services.notifications import push_notification
+from app.services.storage import public_url
 
 router = APIRouter(prefix="/favorites", tags=["favorites"])
 
@@ -18,6 +19,7 @@ def list_favorites(
 ) -> dict:
     rows = db.scalars(
         select(Listing)
+        .options(selectinload(Listing.images))
         .join(Favorite, Favorite.listing_id == Listing.id)
         .where(Favorite.user_id == current_user.id, Listing.status == ListingStatus.active)
         .order_by(Favorite.created_at.desc())
@@ -30,6 +32,7 @@ def list_favorites(
                 "city": l.city,
                 "price_cdf": l.price_cdf,
                 "seller_id": l.seller_id,
+                "primary_image_url": public_url(l.images[0].key) if l.images else None,
             }
             for l in rows
         ]

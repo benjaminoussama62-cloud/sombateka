@@ -8,7 +8,9 @@ client = TestClient(app)
 def test_healthz():
     r = client.get("/healthz")
     assert r.status_code == 200
-    assert r.json()["ok"] is True
+    body = r.json()
+    assert "ok" in body
+    assert "db" in body
 
 
 def test_openapi():

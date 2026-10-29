@@ -1,14 +1,20 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/data_service.dart';
 import '../theme/premium_theme.dart';
 import '../utils/constants.dart';
+import '../utils/friendly_error.dart';
+import '../utils/image_search_web_picker_stub.dart'
+    if (dart.library.js_interop) '../utils/image_search_web_picker_web.dart';
 import '../widgets/publish_photo_grid.dart';
 import '../widgets/listing_extra_params.dart';
 import '../widgets/location_picker_fields.dart';
-import '../utils/listing_attributes.dart';
+import '../utils/listing_catalog.dart';
+import '../widgets/publish_category_picker.dart';
 import '../utils/rdc_locations.dart';
 import '../widgets/publish_field_styles.dart';
+import '../utils/listing_attributes.dart';
 import '../utils/moderation.dart';
 
 /// Publication d'annonce — Web-safe (build 2026-05-20-v3).
@@ -38,11 +44,18 @@ class PublishScreenState extends State<PublishScreen> {
   final _picker = ImagePicker();
   final _data = DataService();
 
-  String _category = 'Électronique';
+  String _category = 'Téléphones';
   String? _selectedSize;
   String? _condition;
   String? _selectedColor;
+  String? _vehicleYear;
+  String? _fuel;
+  String? _rooms;
+  String? _listingTypeAttr;
   final _brandCtrl = TextEditingController();
+  final _mileageCtrl = TextEditingController();
+  final _surfaceCtrl = TextEditingController();
+  final _modelCtrl = TextEditingController();
   String _listingType = ListingType.contact;
   final List<PublishPhoto> _photos = [];
   List<String> _categories = [];
@@ -59,21 +72,16 @@ class PublishScreenState extends State<PublishScreen> {
   Future<void> _loadCategories() async {
     try {
       final cats = await _data.fetchCategories();
-      if (cats.isNotEmpty && mounted) {
-        final names = <String>{};
-        for (final c in cats) {
-          final name = c['name'] as String;
-          _categoryIds[name] = c['id'] as int;
-          names.add(name);
-        }
-        names.addAll(ListingAttributes.fashionCategoryNames);
-        setState(() {
-          _categories = names.toList()..sort();
-          if (!_categories.contains(_category)) _category = _categories.first;
-        });
+      for (final c in cats) {
+        final name = c['name'] as String;
+        _categoryIds[name] = c['id'] as int;
       }
-    } catch (_) {
-      _categories = [...AppStrings.categories, ...ListingAttributes.fashionCategoryNames];
+    } catch (_) {}
+    if (mounted) {
+      setState(() {
+        _categories = ListingCatalog.allCategoryNames();
+        if (!_categories.contains(_category)) _category = _categories.first;
+      });
     }
   }
 
@@ -84,6 +92,9 @@ class PublishScreenState extends State<PublishScreen> {
     _price.dispose();
     _city.dispose();
     _brandCtrl.dispose();
+    _mileageCtrl.dispose();
+    _surfaceCtrl.dispose();
+    _modelCtrl.dispose();
     _avenueCtrl.dispose();
     _numeroCtrl.dispose();
     super.dispose();
@@ -306,37 +317,18 @@ class PublishScreenState extends State<PublishScreen> {
           onQuartierChanged: (q) => setState(() => _quartier = q.isEmpty ? null : q),
         ),
         const SizedBox(height: 14),
-        Text('Catégorie', style: PublishFieldStyles.label),
-        const SizedBox(height: 8),
-        SizedBox(
-          height: 120,
-          child: SingleChildScrollView(
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: (_categories.isEmpty
-                      ? [...AppStrings.categories, ...ListingAttributes.fashionCategoryNames]
-                      : _categories)
-                  .map((c) {
-                final sel = _category == c;
-                return FilterChip(
-                  label: Text(
-                    c,
-                    style: sel ? PublishFieldStyles.chipLabelSelected : PublishFieldStyles.chipLabel,
-                  ),
-                  selected: sel,
-                  onSelected: (_) => setState(() {
-                    _category = c;
-                    _selectedSize = null;
-                    _condition = null;
-                    _selectedColor = null;
-                  }),
-                  selectedColor: PremiumTheme.blue.withValues(alpha: 0.15),
-                  checkmarkColor: PremiumTheme.blue,
-                );
-              }).toList(),
-            ),
-          ),
+        PublishCategoryPicker(
+          selected: _category,
+          onSelected: (c) => setState(() {
+            _category = c;
+            _selectedSize = null;
+            _condition = null;
+            _selectedColor = null;
+            _vehicleYear = null;
+            _fuel = null;
+            _rooms = null;
+            _listingTypeAttr = null;
+          }),
         ),
         if (ListingAttributes.categorySupportsExtraParams(_category)) ...[
           const SizedBox(height: 18),
@@ -349,6 +341,17 @@ class PublishScreenState extends State<PublishScreen> {
             brandController: _brandCtrl,
             selectedColor: _selectedColor,
             onColorChanged: (c) => setState(() => _selectedColor = c),
+            vehicleYear: _vehicleYear,
+            onVehicleYearChanged: (v) => setState(() => _vehicleYear = v),
+            mileageController: _mileageCtrl,
+            modelController: _modelCtrl,
+            fuel: _fuel,
+            onFuelChanged: (f) => setState(() => _fuel = f),
+            surfaceController: _surfaceCtrl,
+            rooms: _rooms,
+            onRoomsChanged: (r) => setState(() => _rooms = r),
+            listingTypeAttr: _listingTypeAttr,
+            onListingTypeChanged: (t) => setState(() => _listingTypeAttr = t),
           ),
         ],
       ],
@@ -449,6 +452,18 @@ class PublishScreenState extends State<PublishScreen> {
 
   Future<void> _pickImage() async {
     try {
+      if (_photos.length >= 5) return;
+      if (kIsWeb) {
+        // FileReader natif — évite le bug iOS Safari "Blob revoked"
+        // d'image_picker_for_web (URL objet révoquée avant lecture).
+        final picked = await pickImageViaHtmlInput(maxBytes: 15 * 1024 * 1024);
+        if (picked == null || _photos.length >= 5 || !mounted) return;
+        setState(() => _photos.add(PublishPhoto(
+              file: XFile.fromData(picked.bytes, name: picked.filename),
+              bytes: picked.bytes,
+            )));
+        return;
+      }
       final x = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
       if (x == null || _photos.length >= 5) return;
       final bytes = await x.readAsBytes();
@@ -457,7 +472,10 @@ class PublishScreenState extends State<PublishScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Impossible de charger la photo: $e'), backgroundColor: AppColors.danger),
+        SnackBar(
+          content: Text(friendlyError(e, fallback: 'Impossible de charger la photo. Réessayez.')),
+          backgroundColor: AppColors.danger,
+        ),
       );
     }
   }
@@ -530,6 +548,13 @@ class PublishScreenState extends State<PublishScreen> {
         condition: _condition,
         brand: _brandCtrl.text.trim().isEmpty ? null : _brandCtrl.text.trim(),
         color: _selectedColor,
+        vehicleYear: _vehicleYear,
+        mileageKm: _mileageCtrl.text.trim().isEmpty ? null : _mileageCtrl.text.trim(),
+        fuel: _fuel,
+        surfaceSqm: _surfaceCtrl.text.trim().isEmpty ? null : _surfaceCtrl.text.trim(),
+        rooms: _rooms,
+        listingTypeAttr: _listingTypeAttr,
+        vehicleModel: _modelCtrl.text.trim().isEmpty ? null : _modelCtrl.text.trim(),
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

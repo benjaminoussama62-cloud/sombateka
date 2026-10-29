@@ -6,6 +6,7 @@ import '../theme/premium_theme.dart';
 import '../utils/constants.dart';
 import '../utils/listing_utils.dart';
 import '../utils/responsive.dart';
+import '../utils/marketplace_layout.dart';
 import '../widgets/marketplace_product_card.dart';
 import 'detail_screen.dart';
 
@@ -76,8 +77,14 @@ class _SimilarProductsScreenState extends State<SimilarProductsScreen> {
             flexibleSpace: FlexibleSpaceBar(
               background: Container(
                 decoration: PremiumTheme.heroGradient,
-                padding: const EdgeInsets.fromLTRB(56, 72, 16, 12),
-                child: Row(
+                padding: EdgeInsets.fromLTRB(
+                  56,
+                  MediaQuery.viewPaddingOf(context).top + 56,
+                  16,
+                  12,
+                ),
+                child: MarketplaceLayout.centered(
+                Row(
                   children: [
                     if ((_sourceImage ?? '').isNotEmpty)
                       ClipRRect(
@@ -100,6 +107,7 @@ class _SimilarProductsScreenState extends State<SimilarProductsScreen> {
                     ),
                   ],
                 ),
+                ),
               ),
             ),
           ),
@@ -119,6 +127,7 @@ class _SimilarProductsScreenState extends State<SimilarProductsScreen> {
               ),
             )
           else ...[
+            MarketplaceLayout.centeredSliver(
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
@@ -128,15 +137,12 @@ class _SimilarProductsScreenState extends State<SimilarProductsScreen> {
                 ),
               ),
             ),
+            ),
+            MarketplaceLayout.centeredSliver(
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              padding: MarketplaceLayout.pagePadding(context).copyWith(top: 0, bottom: 24),
               sliver: SliverGrid(
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: Responsive.productGridColumns(context),
-                  crossAxisSpacing: 14,
-                  mainAxisSpacing: 14,
-                  childAspectRatio: Responsive.productGridAspectRatio(context),
-                ),
+                gridDelegate: MarketplaceLayout.productGridDelegate(context),
                 delegate: SliverChildBuilderDelegate(
                   (context, i) {
                     final item = normalizeListing(_items[i]);
@@ -153,6 +159,7 @@ class _SimilarProductsScreenState extends State<SimilarProductsScreen> {
                   childCount: _items.length,
                 ),
               ),
+            ),
             ),
           ],
         ],

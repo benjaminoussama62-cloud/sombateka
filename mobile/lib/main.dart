@@ -40,12 +40,13 @@ import 'theme/premium_theme.dart';
 import 'utils/pwa.dart';
 import 'utils/st_web_scroll_behavior.dart';
 import 'utils/st_web_splash.dart';
+import 'widgets/st_error_screen.dart';
 import 'utils/responsive.dart';
 import 'utils/constants.dart';
 import 'utils/app_theme.dart';
 import 'widgets/sombateka_wordmark.dart';
 import 'components/custom_bottom_bar.dart';
-import 'widgets/pwa_install_banner.dart';
+import 'widgets/store_app_banner.dart';
 import 'widgets/web_desktop_nav.dart';
 import 'security/cyber_army_mobile.dart';
 
@@ -58,6 +59,8 @@ void main() {
 
 Future<void> _bootstrap() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Jamais d'écran vide/invisible en cas d'erreur de build — écran brandé + rechargement.
+  StErrorScreen.install();
   // DevAlpha Cyber Army — mobile shield
   try {
     if (AppConfig.cyberHqUrl.isNotEmpty && AppConfig.cyberAgentKey.isNotEmpty) {
@@ -75,13 +78,15 @@ Future<void> _bootstrap() async {
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
   }
   try {
-    await initializeDateFormatting('fr_FR', null);
+    await initializeDateFormatting('fr_FR', null)
+        .timeout(const Duration(seconds: 3));
   } catch (_) {}
-  // Cache offline avant 1er frame — critique pour stale-first home.
+  // Cache offline avant 1er frame — stale-first home. Jamais bloquant :
+  // timeout strict, sinon l'app démarre sans cache (dégradé, pas mort).
   try {
-    await OfflineCache.init();
+    await OfflineCache.init().timeout(const Duration(seconds: 3));
   } catch (e, st) {
-    debugPrint('OfflineCache.init failed (app continues): $e\n$st');
+    debugPrint('OfflineCache.init failed or timed out (app continues): $e\n$st');
   }
   // Polices en arrière-plan — ne jamais bloquer le 1er frame (Meta-like).
   unawaited(preloadPremiumFonts().catchError((_) {}));
@@ -138,6 +143,7 @@ class SombaTekaApp extends StatelessWidget {
       },
       // Point d'entrée : toujours SplashScreen
       initialRoute: AppRoutes.splash,
+      navigatorObservers: [StSplashHideObserver()],
       onGenerateRoute: (settings) {
         switch (settings.name) {
           case AppRoutes.splash:
@@ -259,6 +265,28 @@ class SombaTekaApp extends StatelessWidget {
   }
 }
 
+/// Masque le splash HTML dès qu'une vraie route est peinte — quelle qu'elle soit
+/// (main, intro, auth en entree directe, deep-link). Le splash ne disparaît
+/// jamais "avant" le contenu : +400 ms couvre la transition de route.
+class StSplashHideObserver extends NavigatorObserver {
+  bool _done = false;
+
+  void _maybeHide(Route<dynamic>? route) {
+    if (_done || !kIsWeb) return;
+    if (route == null || route.settings.name == AppRoutes.splash) return;
+    _done = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future<void>.delayed(const Duration(milliseconds: 400), stHideHtmlSplash);
+    });
+  }
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) => _maybeHide(route);
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) => _maybeHide(newRoute);
+}
+
 // ─────────────────────────────────────────
 // Écran principal avec bottom navigation
 // ─────────────────────────────────────────
@@ -324,12 +352,12 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
       ),
     ];
     _pageController = PageController();
-    // Masquer splash HTML après paint réel (2 frames) — pas d'écran bleu vide.
+    // Masquer le splash HTML seulement quand la transition de route est finie
+    // (~300ms) — sinon il disparaît au milieu du slide et le splash Flutter
+    // transparaît dessous (flash bleu + logo en double).
     if (kIsWeb) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          stHideHtmlSplash();
-        });
+        Future<void>.delayed(const Duration(milliseconds: 400), stHideHtmlSplash);
       });
     }
     // Badges messages après 1er frame — ne pas concurrencer le feed home.
@@ -390,13 +418,13 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    final showPwaBanner = kIsWeb && pwaShouldOfferInstall();
+    final showStoreBanner = kIsWeb && storeBannerShouldShow();
     final desktopWeb = Responsive.isDesktopWeb(context);
     final showPro = _showEspacePro;
 
     final pageContent = Column(
       children: [
-        if (showPwaBanner) const PwaInstallBanner(),
+        if (showStoreBanner) const StoreAppBanner(),
         Expanded(
           child: PageView(
             controller: _pageController,

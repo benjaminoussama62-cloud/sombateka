@@ -10,6 +10,8 @@ import '../widgets/app_tour_overlay.dart';
 import '../theme/premium_theme.dart';
 import '../utils/constants.dart';
 import '../utils/responsive.dart';
+import '../utils/marketplace_layout.dart';
+import '../utils/friendly_error.dart';
 
 /// Favoris + panier SombaTeka.
 class FavoritesScreen extends StatefulWidget {
@@ -102,7 +104,7 @@ class FavoritesScreenState extends State<FavoritesScreen> with SingleTickerProvi
       _cartItems = List<Map<String, dynamic>>.from(_data.cartItems);
       setState(() {});
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur panier: $e'), backgroundColor: AppColors.danger),
+        SnackBar(content: Text(friendlyError(e, fallback: 'Erreur panier. Réessayez.')), backgroundColor: AppColors.danger),
       );
     }
   }
@@ -128,6 +130,7 @@ class FavoritesScreenState extends State<FavoritesScreen> with SingleTickerProvi
             decoration: PremiumTheme.heroGradient,
             child: SafeArea(
               bottom: false,
+              minimum: EdgeInsets.zero,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
                 child: Column(
@@ -176,13 +179,8 @@ class FavoritesScreenState extends State<FavoritesScreen> with SingleTickerProvi
       color: PremiumTheme.blue,
       onRefresh: _reload,
       child: GridView.builder(
-        padding: const EdgeInsets.all(16),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: Responsive.productGridColumns(context),
-          childAspectRatio: Responsive.productGridAspectRatio(context),
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-        ),
+        padding: MarketplaceLayout.pagePadding(context),
+        gridDelegate: MarketplaceLayout.productGridDelegate(context),
         itemCount: items.length,
         itemBuilder: (_, i) {
           final l = normalizeListing(items[i], favoriteIds: AppServices.instance.favoriteIds);
@@ -195,7 +193,7 @@ class FavoritesScreenState extends State<FavoritesScreen> with SingleTickerProvi
             },
             onAddToCart: l['isOwnListing'] == true
                 ? null
-                : () => CartUiHelper.addListing(context, l, onViewCart: showCartTab),
+                : () => CartUiHelper.toggleListing(context, l, onViewCart: showCartTab),
           );
         },
       ),

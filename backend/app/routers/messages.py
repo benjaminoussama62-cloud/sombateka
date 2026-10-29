@@ -13,6 +13,7 @@ from app.services.privacy import can_message_user, is_blocked
 from app.schemas import MessageCreateRequest, MessagePublic, MessageUpdateRequest, ConversationPublic
 from app.services.storage import public_url
 from app.services.team_outreach import is_team_user, peer_display_name
+from app.settings import settings
 
 router = APIRouter(prefix="/messages", tags=["messages"])
 
@@ -109,7 +110,7 @@ def send_message(
             )
 
         seller = db.get(User, listing.seller_id)
-        if seller and seller.role == UserRole.official_seller:
+        if seller and seller.role == UserRole.official_seller and settings.payments_enabled:
             buyer_id = (
                 current_user.id
                 if current_user.id != listing.seller_id
@@ -222,6 +223,8 @@ def list_conversations(
                 "listing_image_url": listing_image,
                 "is_official_peer": peer.role == UserRole.official_seller,
                 "is_team_peer": is_team_user(peer),
+                "peer_email_verified": bool(peer.email_verified),
+                "peer_account_verified": bool(peer.email_verified),
                 "last_message": m.content,
                 "last_at": m.created_at,
                 "unread_count": 0,
@@ -247,6 +250,8 @@ def list_conversations(
             listing_image_url=v["listing_image_url"],
             is_official_peer=v["is_official_peer"],
             is_team_peer=v.get("is_team_peer", False),
+            peer_email_verified=v.get("peer_email_verified", False),
+            peer_account_verified=v.get("peer_account_verified", False),
             last_message=v["last_message"],
             last_at=v["last_at"],
             unread_count=v["unread_count"],

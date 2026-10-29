@@ -2,7 +2,7 @@ name: sombateka
 description: "SombaTeka — marketplace premium RDC (Android & iOS)."
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.1.1+6
 
 environment:
   sdk: ^3.11.1
@@ -20,6 +20,9 @@ dependencies:
   image_picker: ^1.2.1
   cached_network_image: ^3.4.1
   web: ^1.1.1
+
+  google_sign_in: ^6.2.2
+  sign_in_with_apple: ^6.1.4
 
   carousel_slider: ^5.0.0
   smooth_page_indicator: ^1.2.0+1
@@ -61,6 +64,9 @@ dependencies:
 
   sentry_flutter: ^9.22.0
 
+  # DevAlpha Cyber — anti-screenshot login/register (Android FLAG_SECURE + iOS leakage)
+  screen_protector: ^1.4.5
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -80,6 +86,7 @@ flutter_launcher_icons:
 flutter_native_splash:
   color: "#0D1B4B"
   image: assets/icon/app_icon.png
+  web: false
   android_12:
     color: "#0D1B4B"
     image: assets/icon/app_icon.png
@@ -88,3 +95,6 @@ flutter:
   uses-material-design: true
   assets:
     - assets/icon/
+    - assets/brands/
+    - assets/stores/
+    - assets/maya/

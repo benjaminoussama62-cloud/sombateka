@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/onboarding_service.dart';
+import '../services/app_services.dart';
 import '../theme/premium_theme.dart';
+import 'intro_emoji.dart';
+import 'maya_avatar.dart';
 
 /// Présentation guidée avec avatar guide — bouton Passer.
 class AppTourPresenter {
@@ -10,6 +13,7 @@ class AppTourPresenter {
 
   static Future<void> maybeShow(BuildContext context, AppTourPage page) async {
     if (!context.mounted) return;
+    if (!await AppServices.instance.auth.hasSession()) return;
     final steps = OnboardingService.steps[page];
     if (steps == null || steps.isEmpty) return;
     if (!await OnboardingService.instance.shouldShow(page)) return;
@@ -71,17 +75,7 @@ class _AppTourSheetState extends State<_AppTourSheet> {
                 decoration: PremiumTheme.heroGradient,
                 child: Row(
                   children: [
-                    Container(
-                      width: 52,
-                      height: 52,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.15),
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white24),
-                      ),
-                      alignment: Alignment.center,
-                      child: const Text('🧭', style: TextStyle(fontSize: 26)),
-                    ),
+                    MayaAvatar(size: 52, showPulse: true),
                     const SizedBox(width: 14),
                     Expanded(
                       child: Column(
@@ -109,7 +103,7 @@ class _AppTourSheetState extends State<_AppTourSheet> {
                 padding: const EdgeInsets.fromLTRB(24, 22, 24, 8),
                 child: Column(
                   children: [
-                    Text(step.emoji, style: const TextStyle(fontSize: 44)),
+                    IntroEmoji(emoji: step.emoji, size: 44),
                     const SizedBox(height: 14),
                     Text(step.title, style: PremiumTheme.h1.copyWith(fontSize: 20), textAlign: TextAlign.center),
                     const SizedBox(height: 10),

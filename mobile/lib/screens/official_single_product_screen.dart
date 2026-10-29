@@ -3,7 +3,6 @@ import 'package:image_picker/image_picker.dart';
 
 import '../services/data_service.dart';
 import '../theme/premium_theme.dart';
-import '../utils/constants.dart';
 import '../utils/category_catalog.dart';
 import '../utils/listing_attributes.dart';
 import '../widgets/color_picker_field.dart';
@@ -82,80 +81,153 @@ class _OfficialSingleProductScreenState extends State<OfficialSingleProductScree
 
   @override
   Widget build(BuildContext context) {
+    final desktop = MediaQuery.sizeOf(context).width >= 768;
     return Scaffold(
       backgroundColor: PremiumTheme.surface,
-      appBar: AppBar(
-        title: const Text('Produit unique Pro'),
-        backgroundColor: const Color(0xFF059669),
-        foregroundColor: Colors.white,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            PublishPhotoGrid(
-              photos: _photos,
-              maxPhotos: 12,
-              onAdd: _pickImage,
-              onRemove: (i) => setState(() => _photos.removeAt(i)),
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: desktop ? 880 : double.infinity),
+            child: Column(
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(8, 8, 20, 16),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Color(0xFF059669), Color(0xFF047857)],
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        tooltip: 'Retour',
+                        onPressed: () {
+                          if (Navigator.of(context).canPop()) {
+                            Navigator.of(context).pop();
+                          }
+                        },
+                        icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.white.withValues(alpha: 0.12),
+                        ),
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Produit unique Pro',
+                              style: PremiumTheme.display.copyWith(fontSize: 20, color: Colors.white),
+                            ),
+                            Text(
+                              'Un article · tailles, stock · jusqu\'à 12 photos',
+                              style: PremiumTheme.body.copyWith(fontSize: 12, color: Colors.white70),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.shopping_bag_rounded, color: Colors.white70, size: 28),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.symmetric(horizontal: desktop ? 28 : 20, vertical: 20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        PublishPhotoGrid(
+                          photos: _photos,
+                          maxPhotos: 12,
+                          onAdd: _pickImage,
+                          onRemove: (i) => setState(() => _photos.removeAt(i)),
+                        ),
+                        const SizedBox(height: 16),
+                        _field('Titre', _title, 'Ex: Sneakers Nike Air'),
+                        const SizedBox(height: 12),
+                        _field('Description', _desc, 'Matière, entretien…', maxLines: 3),
+                        const SizedBox(height: 12),
+                        _field('Marque', _brandCtrl, 'Ex: Nike'),
+                        if (_categories.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Text('Catégorie', style: PublishFieldStyles.label),
+                          const SizedBox(height: 6),
+                          DropdownButtonFormField<String>(
+                            value: _categories.contains(_category) ? _category : _categories.first,
+                            decoration: PublishFieldStyles.decoration('Catégorie'),
+                            items: _categories
+                                .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                                .toList(),
+                            onChanged: (v) {
+                              if (v != null) setState(() => _category = v);
+                            },
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                        LocationPickerFields(
+                          province: _province,
+                          commune: _commune,
+                          quartier: _quartier,
+                          avenueController: _avenueCtrl,
+                          numeroController: _numeroCtrl,
+                          onProvinceChanged: (p) => setState(() {
+                            _province = p;
+                            _commune = null;
+                            _quartier = null;
+                          }),
+                          onCommuneChanged: (c) => setState(() {
+                            _commune = c;
+                            _quartier = null;
+                          }),
+                          onQuartierChanged: (q) => setState(() => _quartier = q.isEmpty ? null : q),
+                        ),
+                        const SizedBox(height: 12),
+                        ListingExtraParams(
+                          category: _category,
+                          selectedSize: null,
+                          onSizeChanged: (_) {},
+                          sizeRequired: false,
+                          condition: _condition,
+                          onConditionChanged: (c) => setState(() => _condition = c),
+                          selectedColor: _defaultColor,
+                          onColorChanged: (c) => setState(() => _defaultColor = c),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text('Tailles & stock', style: TextStyle(fontWeight: FontWeight.w800)),
+                        ...List.generate(_variants.length, (i) => _variantRow(i)),
+                        TextButton.icon(
+                          onPressed: () => setState(() => _variants.add(_CatalogVariant())),
+                          icon: const Icon(Icons.add),
+                          label: const Text('Ajouter une taille'),
+                        ),
+                        const SizedBox(height: 24),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 52,
+                          child: ElevatedButton(
+                            onPressed: _loading ? null : _publish,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF059669),
+                              foregroundColor: Colors.white,
+                            ),
+                            child: _loading
+                                ? const SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  )
+                                : const Text('Publier le produit', style: TextStyle(fontWeight: FontWeight.w800)),
+                          ),
+                        ),
+                        const SizedBox(height: 40),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            _field('Titre', _title, 'Ex: Sneakers Nike Air'),
-            const SizedBox(height: 12),
-            _field('Description', _desc, 'Matière, entretien…', maxLines: 3),
-            const SizedBox(height: 12),
-            _field('Marque', _brandCtrl, 'Ex: Nike'),
-            const SizedBox(height: 16),
-            LocationPickerFields(
-              province: _province,
-              commune: _commune,
-              quartier: _quartier,
-              avenueController: _avenueCtrl,
-              numeroController: _numeroCtrl,
-              onProvinceChanged: (p) => setState(() {
-                _province = p;
-                _commune = null;
-                _quartier = null;
-              }),
-              onCommuneChanged: (c) => setState(() {
-                _commune = c;
-                _quartier = null;
-              }),
-              onQuartierChanged: (q) => setState(() => _quartier = q.isEmpty ? null : q),
-            ),
-            const SizedBox(height: 12),
-            ListingExtraParams(
-              category: _category,
-              selectedSize: null,
-              onSizeChanged: (_) {},
-              sizeRequired: false,
-              condition: _condition,
-              onConditionChanged: (c) => setState(() => _condition = c),
-              selectedColor: _defaultColor,
-              onColorChanged: (c) => setState(() => _defaultColor = c),
-            ),
-            const SizedBox(height: 16),
-            const Text('Tailles & stock', style: TextStyle(fontWeight: FontWeight.w800)),
-            ...List.generate(_variants.length, (i) => _variantRow(i)),
-            TextButton.icon(
-              onPressed: () => setState(() => _variants.add(_CatalogVariant())),
-              icon: const Icon(Icons.add),
-              label: const Text('Ajouter une taille'),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: _loading ? null : _publish,
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF059669), foregroundColor: Colors.white),
-                child: _loading
-                    ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Text('Publier le produit', style: TextStyle(fontWeight: FontWeight.w800)),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -197,12 +269,29 @@ class _OfficialSingleProductScreenState extends State<OfficialSingleProductScree
                 );
               }).toList(),
             ),
-            ColorPickerField(label: 'Couleur', compact: true, selectedColor: v.color, onChanged: (c) => setState(() => v.color = c)),
+            ColorPickerField(
+              label: 'Couleur',
+              compact: true,
+              selectedColor: v.color,
+              onChanged: (c) => setState(() => v.color = c),
+            ),
             Row(
               children: [
-                Expanded(child: TextField(decoration: PublishFieldStyles.decoration('Prix CDF'), keyboardType: TextInputType.number, onChanged: (t) => v.price = t)),
+                Expanded(
+                  child: TextField(
+                    decoration: PublishFieldStyles.decoration('Prix CDF'),
+                    keyboardType: TextInputType.number,
+                    onChanged: (t) => v.price = t,
+                  ),
+                ),
                 const SizedBox(width: 8),
-                Expanded(child: TextField(decoration: PublishFieldStyles.decoration('Stock'), keyboardType: TextInputType.number, onChanged: (t) => v.stock = t)),
+                Expanded(
+                  child: TextField(
+                    decoration: PublishFieldStyles.decoration('Stock'),
+                    keyboardType: TextInputType.number,
+                    onChanged: (t) => v.stock = t,
+                  ),
+                ),
               ],
             ),
           ],

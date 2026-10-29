@@ -1,17 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../utils/constants.dart';
+
+import '../theme/premium_theme.dart';
 import '../utils/responsive.dart';
+import '../widgets/st_icon.dart';
+import '../widgets/st_safe_area.dart';
 
+/// Barre de navigation basse — compacte, style Meta (Instagram / WhatsApp).
 class CustomBottomBar extends StatefulWidget {
-  final int currentIndex;
-  final Function(int) onTap;
-
   const CustomBottomBar({
     super.key,
     required this.currentIndex,
+    this.messageBadge = 0,
     required this.onTap,
+    this.showEspacePro = false,
   });
+
+  final int currentIndex;
+  final int messageBadge;
+  final ValueChanged<int> onTap;
+
+  /// Vendeur officiel : remplace Panier par Boutique (Espace Pro).
+  /// Le panier reste accessible depuis l'accueil.
+  final bool showEspacePro;
 
   @override
   State<CustomBottomBar> createState() => _CustomBottomBarState();
@@ -24,143 +35,68 @@ class _CustomBottomBarState extends State<CustomBottomBar> with TickerProviderSt
   @override
   void initState() {
     super.initState();
-    _initAnimations();
-  }
-
-  void _initAnimations() {
-    _animationControllers = List.generate(5, (index) {
-      return AnimationController(
-        duration: const Duration(milliseconds: 200),
-        vsync: this,
-      );
-    });
-    
-    _scaleAnimations = _animationControllers.map((controller) {
-      return Tween<double>(begin: 1.0, end: 1.2).animate(
-        CurvedAnimation(parent: controller, curve: Curves.elasticOut),
-      );
-    }).toList();
+    _animationControllers = List.generate(
+      5,
+      (_) => AnimationController(vsync: this, duration: const Duration(milliseconds: 180)),
+    );
+    _scaleAnimations = _animationControllers
+        .map((c) => Tween<double>(begin: 1, end: 1.08).animate(CurvedAnimation(parent: c, curve: Curves.easeOut)))
+        .toList();
   }
 
   @override
   void dispose() {
-    for (var controller in _animationControllers) {
-      controller.dispose();
+    for (final c in _animationControllers) {
+      c.dispose();
     }
     super.dispose();
   }
 
-  void _onTap(int index) async {
-    HapticFeedback.mediumImpact();
-    _animationControllers[index].forward();
-    await Future.delayed(const Duration(milliseconds: 200));
-    _animationControllers[index].reverse();
-    widget.onTap(index);
+  Future<void> _onTapSlot(int slot, int pageIndex) async {
+    HapticFeedback.selectionClick();
+    widget.onTap(pageIndex);
+    _animationControllers[slot].forward();
+    await Future.delayed(const Duration(milliseconds: 120));
+    _animationControllers[slot].reverse();
   }
 
   @override
   Widget build(BuildContext context) {
     final compact = Responsive.isCompact(context);
-    return Container(
-      height: AppConstants.bottomBarHeight + (compact ? 8 : 16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.shadow,
-            blurRadius: 12,
-            offset: const Offset(0, -4),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: compact ? 4 : 8, vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildNavItem(
-                icon: Icons.home_outlined,
-                activeIcon: Icons.home_rounded,
-                label: 'Accueil',
-                index: 0,
-              ),
-              _buildNavItem(
-                icon: Icons.shopping_bag_outlined,
-                activeIcon: Icons.shopping_bag_rounded,
-                label: 'Panier',
-                index: 1,
-              ),
-              _buildPublishButton(),
-              _buildNavItem(
-                icon: Icons.chat_outlined,
-                activeIcon: Icons.chat_rounded,
-                label: 'Messages',
-                index: 3,
-              ),
-              _buildNavItem(
-                icon: Icons.person_outline_rounded,
-                activeIcon: Icons.person_rounded,
-                label: 'Profil',
-                index: 4,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+    final iconSize = compact ? 22.0 : 24.0;
+    final labelSize = compact ? 9.5 : 10.5;
+    final sideIndex = widget.showEspacePro ? 5 : 1;
+    final sideSelected = widget.currentIndex == sideIndex;
 
-  Widget _buildNavItem({
-    required IconData icon,
-    required IconData activeIcon,
-    required String label,
-    required int index,
-  }) {
-    final isActive = widget.currentIndex == index;
-    final compact = Responsive.isCompact(context);
-    
-    return GestureDetector(
-      onTap: () => _onTap(index),
-      child: AnimatedBuilder(
-        animation: _scaleAnimations[index],
-        builder: (context, child) => Transform.scale(
-          scale: _scaleAnimations[index].value,
-          child: Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: compact ? 6 : 12,
-              vertical: 8,
-            ),
-            decoration: BoxDecoration(
-              color: isActive ? AppColors.primary.withValues(alpha: 0.1) : Colors.transparent,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+    return Material(
+      color: Colors.white,
+      elevation: 0,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: Colors.black.withValues(alpha: 0.08))),
+        ),
+        child: StSafeBottom(
+          child: SizedBox(
+            height: PremiumTheme.bottomNavContentHeight,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 200),
-                  child: Icon(
-                    isActive ? activeIcon : icon,
-                    key: ValueKey(isActive),
-                    size: 24,
-                    color: isActive ? AppColors.primary : AppColors.textSecondary,
-                  ),
+                _navItem(0, 0, Icons.home_outlined, Icons.home_rounded, 'Accueil', iconSize, labelSize),
+                _navItem(
+                  1,
+                  sideIndex,
+                  widget.showEspacePro ? Icons.storefront_outlined : Icons.shopping_bag_outlined,
+                  widget.showEspacePro ? Icons.storefront_rounded : Icons.shopping_bag_rounded,
+                  widget.showEspacePro ? 'Boutique' : 'Panier',
+                  iconSize,
+                  labelSize,
+                  forceActive: sideSelected,
                 ),
-                const SizedBox(height: 4),
-                AnimatedDefaultTextStyle(
-                  duration: const Duration(milliseconds: 200),
-                  style: TextStyle(
-                    fontSize: compact ? 10 : 11,
-                    fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                    color: isActive ? AppColors.primary : AppColors.textSecondary,
-                  ),
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
+                _publishButton(),
+                _navItem(3, 3, Icons.chat_outlined, Icons.chat_rounded, 'Messages', iconSize, labelSize, badge: widget.messageBadge),
+                _navItem(4, 4, Icons.person_outline_rounded, Icons.person_rounded, 'Profil', iconSize, labelSize),
               ],
             ),
           ),
@@ -169,42 +105,110 @@ class _CustomBottomBarState extends State<CustomBottomBar> with TickerProviderSt
     );
   }
 
-  Widget _buildPublishButton() {
-    final isActive = widget.currentIndex == 2;
-    final compact = Responsive.isCompact(context);
-    final size = compact ? 48.0 : 56.0;
-    
-    return GestureDetector(
-      onTap: () => _onTap(2),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              isActive ? AppColors.primary : AppColors.primary,
-              isActive ? AppColors.primaryDark : AppColors.primary.withValues(alpha: 0.8),
-            ],
-          ),
-          borderRadius: BorderRadius.circular(28),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primary.withValues(alpha: 0.4),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
+  Widget _navItem(
+    int slot,
+    int pageIndex,
+    IconData icon,
+    IconData activeIcon,
+    String label,
+    double iconSize,
+    double labelSize, {
+    int badge = 0,
+    bool? forceActive,
+  }) {
+    final active = forceActive ?? widget.currentIndex == pageIndex;
+    return Expanded(
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _onTapSlot(slot, pageIndex),
+          child: AnimatedBuilder(
+            animation: _scaleAnimations[slot],
+            builder: (_, __) => Transform.scale(
+              scale: _scaleAnimations[slot].value,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      AppIcon(
+                        active ? activeIcon : icon,
+                        size: iconSize,
+                        color: active ? PremiumTheme.blue : PremiumTheme.textMuted,
+                      ),
+                      if (badge > 0)
+                        Positioned(
+                          top: -5,
+                          right: -7,
+                          child: Container(
+                            constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
+                            padding: const EdgeInsets.symmetric(horizontal: 3),
+                            alignment: Alignment.center,
+                            decoration: const BoxDecoration(color: Color(0xFFEF4444), shape: BoxShape.circle),
+                            child: Text(
+                              badge > 9 ? '9+' : '$badge',
+                              style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: labelSize,
+                      fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                      color: active ? PremiumTheme.navy : PremiumTheme.textMuted,
+                      height: 1.1,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ],
+          ),
         ),
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 200),
-          child: Icon(
-            isActive ? Icons.add_circle_rounded : Icons.add_rounded,
-            key: ValueKey(isActive),
-            size: 28,
-            color: Colors.white,
+      ),
+    );
+  }
+
+  Widget _publishButton() {
+    final active = widget.currentIndex == 2;
+    final size = PremiumTheme.bottomNavFabSize;
+
+    return SizedBox(
+      width: size + 8,
+      child: Center(
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => _onTapSlot(2, 2),
+            customBorder: const CircleBorder(),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: size,
+              height: size,
+              decoration: BoxDecoration(
+                color: active ? PremiumTheme.emerald : PremiumTheme.blue,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: PremiumTheme.blue.withValues(alpha: 0.28),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: AppIcon(
+                Icons.add_rounded,
+                size: 26,
+                color: Colors.white,
+              ),
+            ),
           ),
         ),
       ),
