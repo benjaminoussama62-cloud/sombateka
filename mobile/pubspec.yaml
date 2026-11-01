@@ -2,7 +2,7 @@ name: sombateka
 description: "SombaTeka — marketplace premium RDC (Android & iOS)."
 publish_to: 'none'
 
-version: 1.1.1+6
+version: 1.1.2+7
 
 environment:
   sdk: ^3.11.1
