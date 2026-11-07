@@ -26,6 +26,23 @@ class ApiClient {
           handler.next(options);
         },
         onError: (error, handler) async {
+          // Session longue durée : sur 401, on tente un refresh transparent
+          // puis on rejoue la requête — l'utilisateur ne voit jamais le login.
+          if (error.response?.statusCode == 401 &&
+              error.requestOptions.extra['__retried'] != true) {
+            final refreshed = await _tryRefresh();
+            if (refreshed) {
+              try {
+                final req = error.requestOptions;
+                req.extra['__retried'] = true;
+                final token = await _tokens.getToken();
+                if (token != null) req.headers['Authorization'] = 'Bearer $token';
+                return handler.resolve(await _dio.fetch(req));
+              } catch (_) {
+                // retombe sur le flux 401 classique ci-dessous
+              }
+            }
+          }
           if (error.response?.statusCode == 401 && !_handling401) {
             _handling401 = true;
             try {
@@ -54,6 +71,33 @@ class ApiClient {
 
   /// Appelé une fois sur 401 (clear session / navigation).
   static SessionExpiredHandler? onSessionExpired;
+
+  bool _refreshing = false;
+
+  /// POST /auth/refresh — silencieux, sans interceptor (Dio nu).
+  Future<bool> _tryRefresh() async {
+    if (_refreshing) return false;
+    _refreshing = true;
+    try {
+      final refresh = await _tokens.getRefreshToken();
+      if (refresh == null || refresh.isEmpty) return false;
+      final bare = Dio(BaseOptions(
+        baseUrl: ApiConfig.baseUrl + ApiConfig.apiPrefix,
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 20),
+      ));
+      final r = await bare.post('/auth/refresh', data: {'refresh_token': refresh});
+      final access = r.data?['access_token'] as String?;
+      final newRefresh = r.data?['refresh_token'] as String?;
+      if (access == null || access.isEmpty) return false;
+      await _tokens.saveToken(access, refreshToken: newRefresh);
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      _refreshing = false;
+    }
+  }
 
   Dio get dio => _dio;
 

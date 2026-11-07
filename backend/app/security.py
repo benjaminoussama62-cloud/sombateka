@@ -1,8 +1,20 @@
+import hashlib
+import secrets
 from datetime import datetime, timedelta, timezone
 
 from jose import jwt
 
 from app.settings import settings
+
+
+def new_refresh_token() -> tuple[str, str]:
+    """Retourne (jeton opaque pour le client, hash sha256 pour la base)."""
+    raw = secrets.token_urlsafe(48)
+    return raw, hashlib.sha256(raw.encode()).hexdigest()
+
+
+def hash_refresh_token(raw: str) -> str:
+    return hashlib.sha256(raw.encode()).hexdigest()
 
 
 def create_access_token(

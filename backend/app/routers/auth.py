@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import EmailOtp, PhoneOtp, User, UserRole
+from app.models import EmailOtp, PhoneOtp, RefreshToken, User, UserRole
 from app.schemas import (
     Admin2FAConfirmSetupRequest,
     Admin2FAVerifyRequest,
@@ -27,10 +27,17 @@ from app.schemas import (
     PhoneLinkSendRequest,
     PhoneLinkVerifyRequest,
     RegisterRequest,
+    RefreshRequest,
     SocialLoginRequest,
     TokenResponse,
 )
-from app.security import create_access_token, create_admin_2fa_challenge, decode_admin_2fa_challenge
+from app.security import (
+    create_access_token,
+    create_admin_2fa_challenge,
+    decode_admin_2fa_challenge,
+    hash_refresh_token,
+    new_refresh_token,
+)
 from app.deps import get_current_user
 from app.constants import DEV_ADMIN_PHONE
 from app.services.phone_identity import is_synthetic_phone
@@ -43,6 +50,71 @@ logger = logging.getLogger(__name__)
 
 OTP_MAX_ATTEMPTS = 5
 OTP_SEND_LIMIT_PER_HOUR = 5
+
+
+def _issue_tokens(db: Session, user: User) -> TokenResponse:
+    """Access JWT court + refresh token opaque longue durée (90 j).
+
+    Comportement des apps marketplace sérieuses : l'utilisateur reste
+    connecté, l'app renouvelle silencieusement via /auth/refresh.
+    """
+    raw, hashed = new_refresh_token()
+    db.add(
+        RefreshToken(
+            user_id=user.id,
+            token_hash=hashed,
+            expires_at=datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_days),
+        )
+    )
+    role = str(user.role.value) if isinstance(user.role, UserRole) else str(user.role)
+    return TokenResponse(
+        access_token=create_access_token(user_id=user.id, role=role),
+        refresh_token=raw,
+    )
+
+
+@router.post("/refresh", response_model=TokenResponse)
+def refresh_session(payload: RefreshRequest, db: Session = Depends(get_db)) -> TokenResponse:
+    """Renouvelle la session : refresh opaque → rotation + nouvel access JWT."""
+    hashed = hash_refresh_token(payload.refresh_token.strip())
+    now = datetime.now(timezone.utc)
+    rt = db.scalar(select(RefreshToken).where(RefreshToken.token_hash == hashed))
+    if not rt or rt.revoked_at is not None or rt.expires_at <= now:
+        raise HTTPException(status_code=401, detail="Session expirée. Connectez-vous à nouveau.")
+    user = db.get(User, rt.user_id)
+    if not user or user.is_banned:
+        raise HTTPException(status_code=403, detail="Compte suspendu.")
+
+    # Rotation : l'ancien refresh est invalidé, le nouveau est émis
+    rt.revoked_at = now
+    resp = _issue_tokens(db, user)
+    db.flush()
+    rt.replaced_by_id = db.scalar(
+        select(RefreshToken.id).where(RefreshToken.token_hash == hash_refresh_token(resp.refresh_token))
+    )
+    db.commit()
+    return resp
+
+
+@router.post("/logout")
+def logout_session(
+    payload: RefreshRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Révoque le refresh token à la déconnexion explicite."""
+    hashed = hash_refresh_token(payload.refresh_token.strip())
+    db.execute(
+        update(RefreshToken)
+        .where(
+            RefreshToken.token_hash == hashed,
+            RefreshToken.user_id == current_user.id,
+            RefreshToken.revoked_at.is_(None),
+        )
+        .values(revoked_at=datetime.now(timezone.utc))
+    )
+    db.commit()
+    return {"ok": True}
 
 
 def _phone_otp_enabled() -> bool:
@@ -290,8 +362,7 @@ def register_account(payload: RegisterRequest, db: Session = Depends(get_db)) ->
         db.commit()
         db.refresh(user)
         role = user.role.value if isinstance(user.role, UserRole) else str(user.role)
-        token = create_access_token(user_id=user.id, role=role)
-        return TokenResponse(access_token=token)
+        return _issue_tokens(db, user)
     except HTTPException:
         db.rollback()
         raise
@@ -337,8 +408,7 @@ def login_with_password(payload: LoginRequest, db: Session = Depends(get_db)) ->
     if not verify_admin_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="E-mail ou mot de passe incorrect.")
 
-    token = create_access_token(user_id=user.id, role=str(user.role.value))
-    return TokenResponse(access_token=token)
+    return _issue_tokens(db, user)
 
 
 @router.post("/password/forgot", response_model=OtpSendResponse)
@@ -389,8 +459,7 @@ def password_reset(payload: PasswordResetRequest, db: Session = Depends(get_db))
     db.refresh(user)
 
     role = user.role.value if isinstance(user.role, UserRole) else str(user.role)
-    token = create_access_token(user_id=user.id, role=role)
-    return TokenResponse(access_token=token)
+    return _issue_tokens(db, user)
 
 
 @router.post("/otp/send", response_model=OtpSendResponse)
@@ -508,8 +577,7 @@ def verify_otp(payload: OtpVerifyRequest, db: Session = Depends(get_db)) -> Toke
     user.updated_at = datetime.utcnow()
     db.commit()
 
-    token = create_access_token(user_id=user.id, role=str(user.role.value))
-    return TokenResponse(access_token=token)
+    return _issue_tokens(db, user)
 
 
 @router.post("/email/otp/send", response_model=OtpSendResponse)
@@ -608,8 +676,7 @@ def verify_email_otp(payload: EmailOtpVerifyRequest, db: Session = Depends(get_d
     user.updated_at = datetime.now(timezone.utc)
     db.commit()
 
-    token = create_access_token(user_id=user.id, role=str(user.role.value))
-    return TokenResponse(access_token=token)
+    return _issue_tokens(db, user)
 
 
 def _social_phone(provider: str, subject: str) -> str:
@@ -698,8 +765,7 @@ def social_login(payload: SocialLoginRequest, db: Session = Depends(get_db)) -> 
             email=payload.email,
             display_name=payload.display_name,
         )
-        token = create_access_token(user_id=user.id, role=str(user.role.value))
-        return TokenResponse(access_token=token)
+        return _issue_tokens(db, user)
 
     if not social_login_enabled():
         raise HTTPException(status_code=503, detail="Connexion Google/Apple non disponible")
@@ -742,8 +808,7 @@ def social_login(payload: SocialLoginRequest, db: Session = Depends(get_db)) -> 
             status_code=409,
             detail="Compte déjà lié à un autre identifiant. Connectez-vous par téléphone ou email.",
         ) from exc
-    token = create_access_token(user_id=user.id, role=str(user.role.value))
-    return TokenResponse(access_token=token)
+    return _issue_tokens(db, user)
 
 
 @router.post("/dev/login", response_model=TokenResponse)
@@ -768,8 +833,7 @@ def dev_login(payload: DevLoginRequest, db: Session = Depends(get_db)) -> TokenR
     user.updated_at = datetime.utcnow()
     db.commit()
 
-    token = create_access_token(user_id=user.id, role=str(user.role.value))
-    return TokenResponse(access_token=token)
+    return _issue_tokens(db, user)
 
 
 @router.post("/admin/login", response_model=AdminLoginResponse)

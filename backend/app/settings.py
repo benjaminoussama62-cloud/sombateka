@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     jwt_issuer: str = "sombateka"
     jwt_audience: str = "sombateka-mobile"
     access_token_minutes: int = 60 * 24 * 7
+    refresh_token_days: int = 90
 
     rate_limit_per_minute: int = 120
     use_redis_rate_limit: bool = True

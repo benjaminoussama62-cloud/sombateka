@@ -258,6 +258,25 @@ class ListingImageFeature(Base):
     listing_image: Mapped["ListingImage"] = relationship(back_populates="visual_feature")
 
 
+class RefreshToken(Base):
+    """Jeton de rafraîchissement — session longue durée (rotation + révocation).
+
+    Le JWT d'accès reste court (60-120 min) ; le refresh token opaque
+    (hashé en base) permet de renouveler la session silencieusement,
+    comme les apps marketplace sérieuses (Wildberries, Kufar…).
+    """
+
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    replaced_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class Message(Base):
     __tablename__ = "messages"
 

@@ -29,8 +29,9 @@ class AuthRepository {
         },
       );
       final token = r.data?['access_token'] as String?;
+      final refresh = r.data?['refresh_token'] as String?;
       if (token == null) throw Exception('Inscription refusée');
-      await _tokens.saveToken(token);
+      await _tokens.saveToken(token, refreshToken: refresh);
     } on DioException catch (e) {
       final detail = e.response?.data;
       if (detail is Map && detail['detail'] != null) {
@@ -50,8 +51,9 @@ class AuthRepository {
         data: {'email': email.trim(), 'password': password},
       );
       final token = r.data?['access_token'] as String?;
+      final refresh = r.data?['refresh_token'] as String?;
       if (token == null) throw Exception('Connexion refusée');
-      await _tokens.saveToken(token);
+      await _tokens.saveToken(token, refreshToken: refresh);
     } on DioException catch (e) {
       final detail = e.response?.data;
       if (detail is Map && detail['detail'] != null) {
@@ -120,8 +122,9 @@ class AuthRepository {
         data: {'phone_e164': phone, 'code': normalizedCode},
       );
       final token = r.data?['access_token'] as String?;
+      final refresh = r.data?['refresh_token'] as String?;
       if (token == null) throw Exception('Token manquant');
-      await _tokens.saveToken(token);
+      await _tokens.saveToken(token, refreshToken: refresh);
     } on DioException catch (e) {
       final detail = e.response?.data;
       if (detail is Map && detail['detail'] != null) {
@@ -139,8 +142,9 @@ class AuthRepository {
         data: {'email': email.trim(), 'code': normalizedCode},
       );
       final token = r.data?['access_token'] as String?;
+      final refresh = r.data?['refresh_token'] as String?;
       if (token == null) throw Exception('Token manquant');
-      await _tokens.saveToken(token);
+      await _tokens.saveToken(token, refreshToken: refresh);
     } on DioException catch (e) {
       final detail = e.response?.data;
       if (detail is Map && detail['detail'] != null) {
@@ -181,8 +185,9 @@ class AuthRepository {
         },
       );
       final token = r.data?['access_token'] as String?;
+      final refresh = r.data?['refresh_token'] as String?;
       if (token == null) throw Exception('Réinitialisation refusée');
-      await _tokens.saveToken(token);
+      await _tokens.saveToken(token, refreshToken: refresh);
     } on DioException catch (e) {
       final detail = e.response?.data;
       if (detail is Map && detail['detail'] != null) {
@@ -212,8 +217,9 @@ class AuthRepository {
       },
     );
     final token = r.data?['access_token'] as String?;
+      final refresh = r.data?['refresh_token'] as String?;
     if (token == null) throw Exception('Connexion refusée');
-    await _tokens.saveToken(token);
+    await _tokens.saveToken(token, refreshToken: refresh);
   }
 
   /// Connexion dev (backend: allow_dev_password_login + password "dev").
@@ -223,10 +229,11 @@ class AuthRepository {
       data: {'phone_e164': phoneE164, 'password': password},
     );
     final token = r.data?['access_token'] as String?;
+      final refresh = r.data?['refresh_token'] as String?;
     if (token == null) {
       throw Exception(r.data?['detail']?.toString() ?? 'Connexion refusée');
     }
-    await _tokens.saveToken(token);
+    await _tokens.saveToken(token, refreshToken: refresh);
   }
 
   Future<Map<String, dynamic>> fetchMe() async {
