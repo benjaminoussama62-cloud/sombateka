@@ -82,7 +82,7 @@ class Settings(BaseSettings):
 
     upload_max_bytes: int = 6 * 1024 * 1024
 
-    # Email (log, smtp, resend)
+    # Email (log, smtp, resend, ayeba)
     email_provider: str = "log"
     email_from: str = "SombaTeka <noreply@sombateka.com>"
     smtp_host: str = ""
@@ -92,6 +92,8 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = True
     smtp_use_ssl: bool = False
     resend_api_key: str = ""
+    ayeba_mail_url: str = "https://ayeba.app"
+    ayeba_mail_key: str = ""
     admin_alert_emails: str = ""
 
     # Google / Apple Sign-In (OAuth id_token vérifié côté serveur)

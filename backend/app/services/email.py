@@ -1,4 +1,4 @@
-"""Envoi d'emails transactionnels (log / SMTP / Resend)."""
+"""Envoi d'emails transactionnels (log / SMTP / Resend / Ayeba Mail)."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import re
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from uuid import uuid4
 
 import httpx
 
@@ -46,8 +47,16 @@ def send_email(
     text_body: str,
     *,
     html_body: str | None = None,
+    email_type: str = "notification",
+    template_data: dict | None = None,
+    idempotency_key: str | None = None,
 ) -> bool:
-    """Envoie un email. Retourne True si l'envoi a réussi (ou simulé en dev)."""
+    """Envoie un email. Retourne True si l'envoi a réussi (ou simulé en dev).
+
+    `email_type` / `template_data` / `idempotency_key` ne sont utilisés que par
+    le provider Ayeba Mail (templates côté serveur) ; les autres providers les
+    ignorent.
+    """
     try:
         recipient = normalize_email(to)
     except ValueError:
@@ -65,6 +74,16 @@ def send_email(
         return _send_smtp(recipient, subject, text_body, html)
     if provider == "resend":
         return _send_resend(recipient, subject, text_body, html)
+    if provider == "ayeba":
+        return _send_ayeba(
+            recipient,
+            subject,
+            text_body,
+            html,
+            email_type=email_type,
+            template_data=template_data,
+            idempotency_key=idempotency_key,
+        )
 
     logger.warning("Unknown email provider %s — logging only", provider)
     logger.info("EMAIL [%s] subject=%s\n%s", recipient, subject, text_body)
@@ -95,7 +114,21 @@ def send_otp_email(email: str, code: str, *, purpose: str = "login") -> bool:
         f'<p style="font-size:28px;font-weight:700;letter-spacing:4px;color:#2563eb">{code}</p>'
         f"<p>Valide <strong>10 minutes</strong>. Ne le partagez avec personne.</p>",
     )
-    return send_email(email, subject, text, html_body=html)
+    ayeba_type = {
+        "login": "otp",
+        "register": "verify",
+        "verify_email": "verify",
+        "reset_password": "reset",
+    }.get(purpose, "otp")
+    return send_email(
+        email,
+        subject,
+        text,
+        html_body=html,
+        email_type=ayeba_type,
+        template_data={"code": code, "ttl": "10 min"},
+        idempotency_key=f"sombateka:{ayeba_type}:{email}:{code}",
+    )
 
 
 def send_user_notification_email(
@@ -130,7 +163,7 @@ def notify_admin_alert(*, subject: str, body: str) -> int:
         f'<p><a href="{panel_url}" style="color:#2563eb">Ouvrir le panneau admin</a></p>',
     )
     for addr in recipients:
-        if send_email(addr, f"[Admin SombaTeka] {subject}", full_body, html_body=html):
+        if send_email(addr, f"[Admin SombaTeka] {subject}", full_body, html_body=html, email_type="alert"):
             sent += 1
     return sent
 
@@ -194,3 +227,63 @@ def _send_resend(to: str, subject: str, text_body: str, html_body: str) -> bool:
     except Exception as exc:
         logger.exception("Resend email failed: %s", exc)
         return False
+
+
+def _send_ayeba(
+    to: str,
+    subject: str,
+    text_body: str,
+    html_body: str,
+    *,
+    email_type: str,
+    template_data: dict | None,
+    idempotency_key: str | None,
+) -> bool:
+    """Envoi via le service central Ayeba Mail (POST /api/mail/transactional).
+
+    Contrat : {app, type, to, locale, data, idempotencyKey} — 200 + {"queued": true}.
+    Un seul retry sur erreur réseau/timeout, avec la MÊME clé d'idempotence.
+    Ne jamais logger `data` (peut contenir codes/tokens).
+    """
+    if not settings.ayeba_mail_key:
+        logger.error("Ayeba Mail key missing (AYEBA_MAIL_KEY)")
+        return False
+
+    url = f"{settings.ayeba_mail_url.rstrip('/')}/api/mail/transactional"
+    payload = {
+        "app": "sombateka",
+        "type": email_type,
+        "to": to,
+        "locale": "fr",
+        "data": {"subject": subject, "text": text_body, "html": html_body, **(template_data or {})},
+        "idempotencyKey": idempotency_key or f"sombateka:{email_type}:{to}:{uuid4().hex}",
+    }
+    headers = {"Authorization": f"Bearer {settings.ayeba_mail_key}"}
+
+    def _post() -> httpx.Response:
+        r = httpx.post(url, headers=headers, json=payload, timeout=5)
+        r.raise_for_status()
+        return r
+
+    try:
+        try:
+            response = _post()
+        except httpx.TransportError:
+            # Timeout / erreur réseau → une seconde tentative, même clé (idempotent)
+            logger.warning("Ayeba Mail timeout/réseau (%s → %s) — retry même clé", email_type, to)
+            response = _post()
+    except httpx.HTTPStatusError as exc:
+        logger.error("Ayeba Mail HTTP %s", exc.response.status_code if exc.response else "?")
+        return False
+    except Exception as exc:
+        logger.exception("Ayeba Mail failed: %s", exc)
+        return False
+
+    try:
+        body = response.json()
+    except ValueError:
+        body = {}
+    if response.status_code == 200 and body.get("queued"):
+        return True
+    logger.error("Ayeba Mail réponse inattendue HTTP %s", response.status_code)
+    return False
