@@ -710,7 +710,10 @@ def _upsert_social_user(
     if not user and normalized_email:
         user = db.scalar(select(User).where(User.email == normalized_email))
 
+    newly_created = False
+    newly_verified = False
     if not user:
+        newly_created = True
         user = User(
             phone_e164=phone,
             role=UserRole.user,
@@ -726,6 +729,7 @@ def _upsert_social_user(
         if display_name and not user.display_name:
             user.display_name = display_name
         if normalized_email:
+            newly_verified = not user.email_verified
             user.email = normalized_email
             user.email_verified = True
 
@@ -733,6 +737,13 @@ def _upsert_social_user(
         user.is_phone_verified = False
     user.updated_at = datetime.now(timezone.utc)
     db.commit()
+    if user.email and (newly_created or newly_verified):
+        try:
+            from app.services.transactional import send_welcome_email
+
+            send_welcome_email(user)
+        except Exception:
+            logger.exception("welcome email failed")
     return user
 
 
