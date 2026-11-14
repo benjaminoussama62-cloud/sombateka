@@ -80,29 +80,34 @@ def send_email(
         logger.info("EMAIL [%s] subject=%s\n%s", recipient, subject, text_body)
         return True
 
-    if provider == "smtp":
-        return _send_smtp(recipient, subject, text_body, html)
-    if provider == "resend":
-        return _send_resend(recipient, subject, text_body, html)
-    if provider == "ayeba":
-        if _send_ayeba(
-            recipient,
-            subject,
-            text_body,
-            html,
-            email_type=email_type,
-            template_data=template_data,
-            idempotency_key=idempotency_key,
-        ):
-            return True
-        # Ayeba indisponible → secours automatique (resend ou smtp si configuré)
-        fallback = (settings.email_fallback_provider or "").lower()
-        if fallback == "resend":
-            logger.warning("Ayeba Mail indisponible (%s → %s) — secours Resend", email_type, recipient)
-            return _send_resend(recipient, subject, text_body, html)
-        if fallback == "smtp":
-            logger.warning("Ayeba Mail indisponible (%s → %s) — secours SMTP", email_type, recipient)
+    def _dispatch(name: str) -> bool:
+        if name == "smtp":
             return _send_smtp(recipient, subject, text_body, html)
+        if name == "resend":
+            return _send_resend(recipient, subject, text_body, html)
+        if name == "ayeba":
+            return _send_ayeba(
+                recipient,
+                subject,
+                text_body,
+                html,
+                email_type=email_type,
+                template_data=template_data,
+                idempotency_key=idempotency_key,
+            )
+        return False
+
+    if provider in ("smtp", "resend", "ayeba"):
+        if _dispatch(provider):
+            return True
+        # Provider principal indisponible → secours automatique configuré
+        fallback = (settings.email_fallback_provider or "").lower()
+        if fallback in ("smtp", "resend", "ayeba") and fallback != provider:
+            logger.warning(
+                "Email provider %s indisponible (%s → %s) — secours %s",
+                provider, email_type, recipient, fallback,
+            )
+            return _dispatch(fallback)
         return False
 
     logger.warning("Unknown email provider %s — logging only", provider)
