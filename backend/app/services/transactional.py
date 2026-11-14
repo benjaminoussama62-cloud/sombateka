@@ -136,7 +136,7 @@ def send_order_created_buyer(order: Order, listing: Listing, buyer: User) -> boo
         + "<p>— L'équipe SombaTeka</p>"
     )
     return _send(
-        buyer, email_type="notification", subject=subject, text=text, html_body=html,
+        buyer, email_type="order", subject=subject, text=text, html_body=html,
         data={"order_ref": ref, "title": listing.title, "amount": order.amount_cdf},
         key=f"order_created:{order.id}",
     )
@@ -169,7 +169,7 @@ def send_new_order_seller(order: Order, listing: Listing, seller: User) -> bool:
         + "<p>— L'équipe SombaTeka</p>"
     )
     return _send(
-        seller, email_type="notification", subject=subject, text=text, html_body=html,
+        seller, email_type="order", subject=subject, text=text, html_body=html,
         data={"order_ref": ref, "title": listing.title, "amount": order.amount_cdf},
         key=f"new_order_seller:{order.id}",
     )
@@ -247,7 +247,7 @@ def send_seller_payment_secured(order: Order, listing: Listing, seller: User) ->
         + "<p>— L'équipe SombaTeka</p>"
     )
     return _send(
-        seller, email_type="notification", subject=subject, text=text, html_body=html,
+        seller, email_type="order", subject=subject, text=text, html_body=html,
         data={"order_ref": ref, "title": listing.title, "amount": order.amount_cdf},
         key=f"seller_paid:{order.id}",
     )
@@ -278,7 +278,7 @@ def send_order_completed_buyer(order: Order, listing: Listing, buyer: User) -> b
         + "<p>— L'équipe SombaTeka</p>"
     )
     return _send(
-        buyer, email_type="notification", subject=subject, text=text, html_body=html,
+        buyer, email_type="order", subject=subject, text=text, html_body=html,
         data={"order_ref": ref, "title": listing.title}, key=f"completed_b:{order.id}",
     )
 
@@ -302,7 +302,7 @@ def send_order_completed_seller(order: Order, listing: Listing, seller: User, *,
         + "<p>— L'équipe SombaTeka</p>"
     )
     return _send(
-        seller, email_type="notification", subject=subject, text=text, html_body=html,
+        seller, email_type="order", subject=subject, text=text, html_body=html,
         data={"order_ref": ref, "title": listing.title, "amount": amount_cdf},
         key=f"completed_s:{order.id}",
     )
@@ -331,7 +331,7 @@ def send_order_refunded(order: Order, listing: Listing, buyer: User) -> bool:
         + "<p>— L'équipe SombaTeka</p>"
     )
     return _send(
-        buyer, email_type="notification", subject=subject, text=text, html_body=html,
+        buyer, email_type="order", subject=subject, text=text, html_body=html,
         data={"order_ref": ref, "title": listing.title, "amount": order.amount_cdf},
         key=f"refund:{order.id}",
     )
@@ -423,7 +423,7 @@ def send_weekly_digest(user: User, *, new_count: int, sample_titles: list[str]) 
         + "<p>— L'équipe SombaTeka</p>"
     )
     return _send(
-        user, email_type="notification", subject=subject, text=text, html_body=html,
+        user, email_type="digest", subject=subject, text=text, html_body=html,
         data={"count": new_count, "titles": sample_titles}, key=f"digest:{user.id}",
         require_verified=True,
     )

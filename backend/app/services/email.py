@@ -18,6 +18,28 @@ logger = logging.getLogger(__name__)
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
+def _sender_domain() -> str:
+    """Domaine d'envoi extrait de EMAIL_FROM (ex. sombatekaonline.com)."""
+    return settings.email_from.split("@")[-1].rstrip(">").strip()
+
+
+def _sender_for(email_type: str) -> str:
+    """Adresse From par type d'email — archi identique aux grandes marketplaces
+    (securite@ pour les codes, commandes@ pour les commandes, etc.)."""
+    d = _sender_domain()
+    return {
+        "otp": f"SombaTeka Sécurité <securite@{d}>",
+        "verify": f"SombaTeka Sécurité <securite@{d}>",
+        "reset": f"SombaTeka Sécurité <securite@{d}>",
+        "receipt": f"SombaTeka Commandes <commandes@{d}>",
+        "order": f"SombaTeka Commandes <commandes@{d}>",
+        "welcome": f"SombaTeka <hello@{d}>",
+        "digest": f"SombaTeka <news@{d}>",
+        "support": f"SombaTeka Support <support@{d}>",
+        "alert": f"SombaTeka Alertes <alertes@{d}>",
+    }.get(email_type, settings.email_from)
+
+
 def normalize_email(value: str) -> str:
     email = value.strip().lower()
     if not _EMAIL_RE.match(email):
@@ -45,7 +67,8 @@ def _html_wrapper(title: str, body_html: str) -> str:
   </div>
   {body_html}
   <p style="margin-top:32px;font-size:12px;color:#6b7280">
-    Cet email a été envoyé automatiquement par SombaTeka. Ne répondez pas directement à cette adresse.
+    Cet email a été envoyé automatiquement par SombaTeka.<br>
+    Une question ? Notre équipe vous répond : <a href="mailto:support@sombatekaonline.com" style="color:#2563eb">support@sombatekaonline.com</a>
   </p>
 </body>
 </html>"""
@@ -60,12 +83,13 @@ def send_email(
     email_type: str = "notification",
     template_data: dict | None = None,
     idempotency_key: str | None = None,
+    reply_to: str | None = None,
 ) -> bool:
     """Envoie un email. Retourne True si l'envoi a réussi (ou simulé en dev).
 
-    `email_type` / `template_data` / `idempotency_key` ne sont utilisés que par
-    le provider Ayeba Mail (templates côté serveur) ; les autres providers les
-    ignorent.
+    `email_type` détermine l'expéditeur From (securite@, commandes@, ...).
+    `reply_to` : adresse recevant les réponses (support@ par défaut).
+    `template_data` / `idempotency_key` ne sont utilisés que par Ayeba Mail.
     """
     try:
         recipient = normalize_email(to)
@@ -80,11 +104,14 @@ def send_email(
         logger.info("EMAIL [%s] subject=%s\n%s", recipient, subject, text_body)
         return True
 
+    from_addr = _sender_for(email_type)
+    reply_to_addr = reply_to or settings.support_email
+
     def _dispatch(name: str) -> bool:
         if name == "smtp":
-            return _send_smtp(recipient, subject, text_body, html)
+            return _send_smtp(recipient, subject, text_body, html, from_addr, reply_to_addr)
         if name == "resend":
-            return _send_resend(recipient, subject, text_body, html)
+            return _send_resend(recipient, subject, text_body, html, from_addr, reply_to_addr)
         if name == "ayeba":
             return _send_ayeba(
                 recipient,
@@ -94,6 +121,8 @@ def send_email(
                 email_type=email_type,
                 template_data=template_data,
                 idempotency_key=idempotency_key,
+                from_addr=from_addr,
+                reply_to=reply_to_addr,
             )
         return False
 
@@ -124,6 +153,7 @@ def send_email_async(
     email_type: str = "notification",
     template_data: dict | None = None,
     idempotency_key: str | None = None,
+    reply_to: str | None = None,
 ) -> bool:
     """Version non bloquante : file Celery → réponse API instantanée, envoi en
     tâche de fond (le provider Ayeba met ~5-12 s à répondre).
@@ -140,6 +170,7 @@ def send_email_async(
             email_type=email_type,
             template_data=template_data,
             idempotency_key=idempotency_key,
+            reply_to=reply_to,
         )
     try:
         from app.tasks.email import send_email_task
@@ -153,6 +184,7 @@ def send_email_async(
                 "email_type": email_type,
                 "template_data": template_data,
                 "idempotency_key": idempotency_key,
+                "reply_to": reply_to,
             }
         )
         return True
@@ -167,6 +199,7 @@ def send_email_async(
             email_type=email_type,
             template_data=template_data,
             idempotency_key=idempotency_key,
+            reply_to=reply_to,
         )
 
 
@@ -248,13 +281,15 @@ def notify_admin_alert(*, subject: str, body: str) -> int:
     return sent
 
 
-def _send_smtp(to: str, subject: str, text_body: str, html_body: str) -> bool:
+def _send_smtp(to: str, subject: str, text_body: str, html_body: str,
+               from_addr: str, reply_to: str) -> bool:
     if not settings.smtp_host:
         logger.error("SMTP host missing")
         return False
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"] = settings.email_from
+    msg["From"] = from_addr
+    msg["Reply-To"] = reply_to
     msg["To"] = to
     msg.attach(MIMEText(text_body, "plain", "utf-8"))
     msg.attach(MIMEText(html_body, "html", "utf-8"))
@@ -263,26 +298,28 @@ def _send_smtp(to: str, subject: str, text_body: str, html_body: str) -> bool:
             with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=20) as server:
                 if settings.smtp_user:
                     server.login(settings.smtp_user, settings.smtp_password)
-                server.sendmail(settings.email_from, [to], msg.as_string())
+                server.sendmail(from_addr, [to], msg.as_string())
         else:
             with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as server:
                 if settings.smtp_use_tls:
                     server.starttls()
                 if settings.smtp_user:
                     server.login(settings.smtp_user, settings.smtp_password)
-                server.sendmail(settings.email_from, [to], msg.as_string())
+                server.sendmail(from_addr, [to], msg.as_string())
         return True
     except Exception as exc:
         logger.exception("SMTP email failed: %s", exc)
         return False
 
 
-def _send_resend(to: str, subject: str, text_body: str, html_body: str) -> bool:
+def _send_resend(to: str, subject: str, text_body: str, html_body: str,
+                 from_addr: str, reply_to: str) -> bool:
     if not settings.resend_api_key:
         logger.error("Resend API key missing")
         return False
     payload = {
-        "from": settings.email_from,
+        "from": from_addr,
+        "reply_to": [reply_to],
         "to": [to],
         "subject": subject,
         "text": text_body,
@@ -318,6 +355,8 @@ def _send_ayeba(
     email_type: str,
     template_data: dict | None,
     idempotency_key: str | None,
+    from_addr: str,
+    reply_to: str,
 ) -> bool:
     """Envoi via le service central Ayeba Mail (POST /api/mail/transactional).
 
@@ -335,7 +374,7 @@ def _send_ayeba(
         "type": email_type,
         "to": to,
         "locale": "fr",
-        "data": {"subject": subject, "text": text_body, "html": html_body, **(template_data or {})},
+        "data": {"from": from_addr, "replyTo": reply_to, "subject": subject, "text": text_body, "html": html_body, **(template_data or {})},
         "idempotencyKey": idempotency_key or f"sombateka:{email_type}:{to}:{uuid4().hex}",
     }
     headers = {"Authorization": f"Bearer {settings.ayeba_mail_key}"}

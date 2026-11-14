@@ -25,6 +25,7 @@ def send_email_task(
     email_type: str = "notification",
     template_data: dict | None = None,
     idempotency_key: str | None = None,
+    reply_to: str | None = None,
 ) -> bool:
     """Envoie un email en tâche de fond.
 
@@ -43,6 +44,7 @@ def send_email_task(
             email_type=email_type,
             template_data=template_data,
             idempotency_key=idempotency_key,
+            reply_to=reply_to,
         )
     except Exception as exc:
         logger.exception("send_email_task crashed (%s → %s)", email_type, to)

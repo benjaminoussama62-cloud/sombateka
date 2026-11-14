@@ -84,7 +84,8 @@ class Settings(BaseSettings):
 
     # Email (log, smtp, resend, ayeba)
     email_provider: str = "log"
-    email_from: str = "SombaTeka <noreply@sombateka.com>"
+    email_from: str = "SombaTeka <noreply@sombatekaonline.com>"
+    support_email: str = "SombaTeka Support <support@sombatekaonline.com>"
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
