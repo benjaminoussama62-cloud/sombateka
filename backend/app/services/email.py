@@ -26,16 +26,26 @@ def normalize_email(value: str) -> str:
 
 
 def _html_wrapper(title: str, body_html: str) -> str:
+    logo_url = f"{settings.public_base_url.rstrip('/')}/icons/Icon-192.png"
     return f"""<!DOCTYPE html>
 <html lang="fr">
 <head><meta charset="utf-8"><title>{title}</title></head>
 <body style="font-family:Segoe UI,Arial,sans-serif;line-height:1.5;color:#111827;max-width:560px;margin:0 auto;padding:24px">
-  <div style="border-bottom:3px solid #2563eb;padding-bottom:12px;margin-bottom:20px">
-    <strong style="font-size:18px;color:#1e3a8a">SombaTeka</strong>
+  <div style="border-bottom:3px solid #2563eb;padding-bottom:14px;margin-bottom:20px">
+    <table cellpadding="0" cellspacing="0" border="0" role="presentation"><tr>
+      <td style="vertical-align:middle;padding-right:10px">
+        <img src="{logo_url}" width="40" height="40" alt="SombaTeka"
+             style="display:block;border-radius:8px" />
+      </td>
+      <td style="vertical-align:middle">
+        <strong style="font-size:19px;color:#1e3a8a">SombaTeka</strong><br>
+        <span style="font-size:11px;color:#6b7280">La marketplace de confiance en RDC</span>
+      </td>
+    </tr></table>
   </div>
   {body_html}
   <p style="margin-top:32px;font-size:12px;color:#6b7280">
-    Cet email a été envoyé automatiquement. Ne répondez pas directement à cette adresse.
+    Cet email a été envoyé automatiquement par SombaTeka. Ne répondez pas directement à cette adresse.
   </p>
 </body>
 </html>"""
