@@ -94,6 +94,8 @@ class Settings(BaseSettings):
     resend_api_key: str = ""
     ayeba_mail_url: str = "https://ayeba.app"
     ayeba_mail_key: str = ""
+    # Secours si ayeba indisponible : "resend" | "smtp" | "" (aucun)
+    email_fallback_provider: str = ""
     admin_alert_emails: str = ""
 
     # Google / Apple Sign-In (OAuth id_token vérifié côté serveur)
