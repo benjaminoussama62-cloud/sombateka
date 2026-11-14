@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -28,6 +29,8 @@ from app.models import (
 from app.services.notifications import push_notification
 from app.services.team_outreach import get_or_create_team_user
 from app.settings import settings
+
+logger = logging.getLogger(__name__)
 
 CHAT_WRITABLE_STATUSES = frozenset({OrderStatus.sequestre})
 CHAT_VISIBLE_STATUSES = frozenset({OrderStatus.sequestre, OrderStatus.succes, OrderStatus.rembourse})
@@ -153,6 +156,16 @@ def enter_sequestre(
         order_id=order.id,
         commit=False,
     )
+    try:
+        from app.services.transactional import send_payment_receipt, send_seller_payment_secured
+
+        buyer = db.get(User, order.buyer_id)
+        if buyer:
+            send_payment_receipt(order, listing, buyer)
+        if seller:
+            send_seller_payment_secured(order, listing, seller)
+    except Exception:
+        logger.exception("sequestre emails failed")
 
 
 def _schedule_seller_payout(db: Session, *, order: Order, listing: Listing) -> None:
@@ -228,6 +241,23 @@ def release_to_seller(db: Session, *, order: Order, listing: Listing) -> None:
         order_id=order.id,
         commit=False,
     )
+    try:
+        from app.services.transactional import (
+            send_order_completed_buyer,
+            send_order_completed_seller,
+        )
+
+        buyer = db.get(User, order.buyer_id)
+        seller = db.get(User, listing.seller_id)
+        if buyer:
+            send_order_completed_buyer(order, listing, buyer)
+        if seller:
+            commission = int(order.amount_cdf * settings.platform_commission_percent / 100)
+            send_order_completed_seller(
+                order, listing, seller, amount_cdf=order.amount_cdf - commission
+            )
+    except Exception:
+        logger.exception("order completed emails failed")
 
 
 def refund_buyer(db: Session, *, order: Order, listing: Listing, note: str | None = None) -> None:
@@ -266,6 +296,14 @@ def refund_buyer(db: Session, *, order: Order, listing: Listing, note: str | Non
         order_id=order.id,
         commit=False,
     )
+    try:
+        from app.services.transactional import send_order_refunded
+
+        buyer = db.get(User, order.buyer_id)
+        if buyer:
+            send_order_refunded(order, listing, buyer)
+    except Exception:
+        logger.exception("refund email failed")
 
 
 def _post_chat_locked_notice(db: Session, *, order: Order, listing: Listing, kind: str) -> None:

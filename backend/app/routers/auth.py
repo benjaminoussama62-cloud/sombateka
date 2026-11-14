@@ -675,6 +675,12 @@ def verify_email_otp(payload: EmailOtpVerifyRequest, db: Session = Depends(get_d
     user.email_verified = True
     user.updated_at = datetime.now(timezone.utc)
     db.commit()
+    try:
+        from app.services.transactional import send_welcome_email
+
+        send_welcome_email(user)
+    except Exception:
+        logger.exception("welcome email failed")
 
     return _issue_tokens(db, user)
 

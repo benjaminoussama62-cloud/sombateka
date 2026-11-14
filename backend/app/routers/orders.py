@@ -1,3 +1,4 @@
+import logging
 import secrets
 from datetime import datetime, timezone
 
@@ -43,6 +44,7 @@ from app.services.payments import payment_service
 from app.settings import settings
 
 router = APIRouter(prefix="/orders", tags=["orders"])
+logger = logging.getLogger(__name__)
 
 
 def _order_public(order: Order) -> OrderPublic:
@@ -180,6 +182,14 @@ def create_order(
         )
     db.commit()
     db.refresh(order)
+    try:
+        from app.services.transactional import send_new_order_seller, send_order_created_buyer
+
+        send_order_created_buyer(order, listing, current_user)
+        if seller:
+            send_new_order_seller(order, listing, seller)
+    except Exception:
+        logger.exception("order created emails failed")
     return _order_public(order)
 
 

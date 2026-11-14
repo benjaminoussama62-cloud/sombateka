@@ -35,5 +35,17 @@ celery_app.conf.update(
             "task": "app.tasks.visual.backfill_all_images",
             "schedule": crontab(minute=35, hour="*/4"),
         },
+        "unread-message-reminders": {
+            "task": "app.tasks.reminders.send_unread_message_reminders",
+            "schedule": crontab(minute=10),
+        },
+        "abandoned-cart-reminders": {
+            "task": "app.tasks.reminders.send_cart_reminders",
+            "schedule": crontab(minute=0, hour=9),
+        },
+        "weekly-digest": {
+            "task": "app.tasks.reminders.send_weekly_digest",
+            "schedule": crontab(minute=0, hour=8, day_of_week="mon"),
+        },
     },
 )

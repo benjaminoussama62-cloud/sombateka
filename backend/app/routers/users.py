@@ -221,6 +221,12 @@ def verify_my_email(
     current_user.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(current_user)
+    try:
+        from app.services.transactional import send_welcome_email
+
+        send_welcome_email(current_user)
+    except Exception:
+        pass
     return MeResponse(user=user_to_public(current_user, db))
 
 
