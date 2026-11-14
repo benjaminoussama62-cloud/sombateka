@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 
 from app.models import CartItem, Listing, Order, User
-from app.services.email import _html_wrapper, send_email
+from app.services.email import _html_wrapper, send_email_async
 from app.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -56,7 +56,7 @@ def _send(
     if require_verified and not user.email_verified:
         return False
     try:
-        return send_email(
+        return send_email_async(
             user.email,
             subject,
             text,

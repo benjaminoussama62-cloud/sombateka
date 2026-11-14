@@ -154,6 +154,20 @@ def notify_staff_incoming(db: Session, *, from_user: User, preview: str) -> None
             commit=False,
         )
     db.flush()
+    try:
+        from app.services.email import notify_admin_alert
+
+        # Alerte email équipe — sans le contenu du message (PII) : le staff
+        # se connecte au panneau pour lire la conversation.
+        notify_admin_alert(
+            subject=f"Support : nouveau message de {label}",
+            body=(
+                f"Un utilisateur ({label}) a écrit au centre d'aide SombaTeka.\n\n"
+                "Connectez-vous au panneau admin → Centre d'aide pour lire et répondre."
+            ),
+        )
+    except Exception:
+        pass
 
 
 def notify_user_support_reply(db: Session, *, user_id: int, preview: str) -> None:

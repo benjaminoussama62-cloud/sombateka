@@ -100,6 +100,61 @@ def send_email(
     return True
 
 
+def send_email_async(
+    to: str,
+    subject: str,
+    text_body: str,
+    *,
+    html_body: str | None = None,
+    email_type: str = "notification",
+    template_data: dict | None = None,
+    idempotency_key: str | None = None,
+) -> bool:
+    """Version non bloquante : file Celery → réponse API instantanée, envoi en
+    tâche de fond (le provider Ayeba met ~5-12 s à répondre).
+
+    Retourne True si la tâche est enfilee (pas une garantie de livraison).
+    En dev (`provider=log`), envoi synchrone pour voir les logs directement.
+    """
+    if (settings.email_provider or "log").lower() == "log":
+        return send_email(
+            to,
+            subject,
+            text_body,
+            html_body=html_body,
+            email_type=email_type,
+            template_data=template_data,
+            idempotency_key=idempotency_key,
+        )
+    try:
+        from app.tasks.email import send_email_task
+
+        send_email_task.apply_async(
+            kwargs={
+                "to": to,
+                "subject": subject,
+                "text_body": text_body,
+                "html_body": html_body,
+                "email_type": email_type,
+                "template_data": template_data,
+                "idempotency_key": idempotency_key,
+            }
+        )
+        return True
+    except Exception:
+        # Broker indisponible → envoi synchrone en dernier recours
+        logger.exception("email queue indisponible (%s → %s) — envoi synchrone", email_type, to)
+        return send_email(
+            to,
+            subject,
+            text_body,
+            html_body=html_body,
+            email_type=email_type,
+            template_data=template_data,
+            idempotency_key=idempotency_key,
+        )
+
+
 def send_otp_email(email: str, code: str, *, purpose: str = "login") -> bool:
     subjects = {
         "login": "SombaTeka — votre code de connexion",
@@ -130,7 +185,7 @@ def send_otp_email(email: str, code: str, *, purpose: str = "login") -> bool:
         "verify_email": "verify",
         "reset_password": "reset",
     }.get(purpose, "otp")
-    return send_email(
+    return send_email_async(
         email,
         subject,
         text,
@@ -154,7 +209,7 @@ def send_user_notification_email(
         f"<p>{body.replace(chr(10), '<br>')}</p>"
         f'<p><a href="{settings.public_base_url}" style="color:#2563eb">Ouvrir SombaTeka</a></p>',
     )
-    return send_email(email, subject, body, html_body=html)
+    return send_email_async(email, subject, body, html_body=html)
 
 
 def notify_admin_alert(*, subject: str, body: str) -> int:
@@ -173,7 +228,7 @@ def notify_admin_alert(*, subject: str, body: str) -> int:
         f'<p><a href="{panel_url}" style="color:#2563eb">Ouvrir le panneau admin</a></p>',
     )
     for addr in recipients:
-        if send_email(addr, f"[Admin SombaTeka] {subject}", full_body, html_body=html, email_type="alert"):
+        if send_email_async(addr, f"[Admin SombaTeka] {subject}", full_body, html_body=html, email_type="alert"):
             sent += 1
     return sent
 
@@ -271,7 +326,8 @@ def _send_ayeba(
     headers = {"Authorization": f"Bearer {settings.ayeba_mail_key}"}
 
     def _post() -> httpx.Response:
-        r = httpx.post(url, headers=headers, json=payload, timeout=5)
+        # L'API Ayeba met ~5-7 s à répondre : timeout généreux sinon tout tombe.
+        r = httpx.post(url, headers=headers, json=payload, timeout=12)
         r.raise_for_status()
         return r
 

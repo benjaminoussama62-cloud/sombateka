@@ -7,7 +7,14 @@ celery_app = Celery(
     "sombateka",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
-    include=["app.tasks.payments", "app.tasks.escrow", "app.tasks.merchant", "app.tasks.visual"],
+    include=[
+        "app.tasks.payments",
+        "app.tasks.escrow",
+        "app.tasks.merchant",
+        "app.tasks.visual",
+        "app.tasks.reminders",
+        "app.tasks.email",
+    ],
 )
 
 celery_app.conf.update(
