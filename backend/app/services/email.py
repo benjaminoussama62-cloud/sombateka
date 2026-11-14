@@ -359,7 +359,10 @@ def _send_ayeba(
         body = response.json()
     except ValueError:
         body = {}
-    if response.status_code == 200 and body.get("queued"):
+    # 200 = queued confirmé ; 201/202 = accepté pour traitement ultérieur
+    if response.status_code in (200, 201, 202):
+        if response.status_code == 200 and not body.get("queued"):
+            logger.warning("Ayeba Mail 200 sans queued: %s", list(body)[:5])
         return True
     logger.error("Ayeba Mail réponse inattendue HTTP %s", response.status_code)
     return False
