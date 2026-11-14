@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -20,6 +21,8 @@ from app.services.payments.mtn import MtnMoneyProvider
 from app.services.payments.orange import OrangeMoneyProvider
 from app.services.payments.provider import PaymentInitResult
 from app.settings import settings
+
+logger = logging.getLogger(__name__)
 
 
 class PaymentService:
@@ -104,6 +107,28 @@ class PaymentService:
         else:
             tx.status = PaymentStatus.failed
             order.status = OrderStatus.cancelled
+            try:
+                buyer = db.get(User, order.buyer_id)
+                if listing and buyer:
+                    from app.services.notifications import push_notification
+                    from app.services.transactional import send_payment_failed
+
+                    push_notification(
+                        db,
+                        user_id=buyer.id,
+                        type="payment_failed",
+                        title="Paiement non abouti",
+                        body=(
+                            f"Le paiement pour « {listing.title} » n'a pas abouti. "
+                            "Aucun montant débité — vous pouvez réessayer."
+                        ),
+                        order_id=order.id,
+                        listing_id=listing.id,
+                        commit=False,
+                    )
+                    send_payment_failed(order, listing, buyer)
+            except Exception:
+                logger.exception("payment failed notification/email failed (order=%s)", order.id)
 
         db.commit()
         db.refresh(tx)

@@ -31,8 +31,12 @@ def _sender_for(email_type: str) -> str:
         "otp": f"SombaTeka Sécurité <securite@{d}>",
         "verify": f"SombaTeka Sécurité <securite@{d}>",
         "reset": f"SombaTeka Sécurité <securite@{d}>",
-        "receipt": f"SombaTeka Commandes <commandes@{d}>",
+        "receipt": f"SombaTeka Facturation <facturation@{d}>",
+        "billing": f"SombaTeka Facturation <facturation@{d}>",
         "order": f"SombaTeka Commandes <commandes@{d}>",
+        "message": f"SombaTeka <messagerie@{d}>",
+        "pro": f"SombaTeka Vendeurs <vendeurs@{d}>",
+        "moderation": f"SombaTeka Modération <moderation@{d}>",
         "welcome": f"SombaTeka <hello@{d}>",
         "digest": f"SombaTeka <news@{d}>",
         "support": f"SombaTeka Support <support@{d}>",
@@ -249,6 +253,7 @@ def send_user_notification_email(
     email: str,
     title: str,
     body: str,
+    email_type: str = "notification",
 ) -> bool:
     subject = f"SombaTeka — {title}"
     html = _html_wrapper(
@@ -257,7 +262,7 @@ def send_user_notification_email(
         f"<p>{body.replace(chr(10), '<br>')}</p>"
         f'<p><a href="{settings.public_base_url}" style="color:#2563eb">Ouvrir SombaTeka</a></p>',
     )
-    return send_email_async(email, subject, body, html_body=html)
+    return send_email_async(email, subject, body, html_body=html, email_type=email_type)
 
 
 def notify_admin_alert(*, subject: str, body: str) -> int:
@@ -369,9 +374,16 @@ def _send_ayeba(
         return False
 
     url = f"{settings.ayeba_mail_url.rstrip('/')}/api/mail/transactional"
+    # Types connus des templates Ayeba ; le reste retombe sur le générique
+    # ("billing" → "receipt" car ce sont les emails d'argent).
+    ayeba_type = (
+        email_type
+        if email_type in {"otp", "verify", "reset", "receipt", "notification", "welcome", "alert"}
+        else ("receipt" if email_type == "billing" else "notification")
+    )
     payload = {
         "app": "sombateka",
-        "type": email_type,
+        "type": ayeba_type,
         "to": to,
         "locale": "fr",
         "data": {"from": from_addr, "replyTo": reply_to, "subject": subject, "text": text_body, "html": html_body, **(template_data or {})},

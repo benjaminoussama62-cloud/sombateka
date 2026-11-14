@@ -96,7 +96,19 @@ def notify_user(
     if recipient.email and getattr(recipient, "email_verified", False):
         from app.services.email import send_user_notification_email
 
-        send_user_notification_email(email=recipient.email, title=title, body=body.strip())
+        # Expéditeur par canal : KYC/vendeur → vendeurs@, modération → moderation@
+        email_type = {
+            "kyc_approved": "pro",
+            "kyc_rejected": "pro",
+            "official_revoked": "pro",
+            "account_banned": "moderation",
+            "account_unbanned": "moderation",
+            "team_warning": "moderation",
+            "listing_hidden": "moderation",
+        }.get(notif_type, "support")
+        send_user_notification_email(
+            email=recipient.email, title=title, body=body.strip(), email_type=email_type
+        )
 
 
 def notify_kyc_approved(db: Session, *, user_id: int, business_name: str) -> None:

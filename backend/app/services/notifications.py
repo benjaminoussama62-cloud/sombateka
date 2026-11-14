@@ -6,13 +6,13 @@ from app.models import Notification, User
 
 logger = logging.getLogger(__name__)
 
-# Types de notifications qui déclenchent aussi un email transactionnel
-# (les types riches — commandes/paiements — ont leurs emails dédiés).
-_EMAIL_TYPES = frozenset({
-    "payment_cancelled",
-    "escrow_deadline",
-    "support_reply",
-})
+# Types de notifications qui déclenchent aussi un email, avec l'expéditeur
+# dédié (les types riches — commandes/paiements — ont leurs emails dédiés).
+_EMAIL_TYPES = {
+    "payment_cancelled": "billing",
+    "escrow_deadline": "billing",
+    "support_reply": "support",
+}
 
 
 def push_notification(
@@ -48,7 +48,10 @@ def push_notification(
             if user and user.email:
                 from app.services.email import send_user_notification_email
 
-                send_user_notification_email(email=user.email, title=title, body=body)
+                send_user_notification_email(
+                    email=user.email, title=title, body=body,
+                    email_type=_EMAIL_TYPES[type],
+                )
         except Exception:
             logger.exception("notification email failed (type=%s user=%s)", type, user_id)
     return n

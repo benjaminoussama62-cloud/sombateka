@@ -224,6 +224,48 @@ def send_payment_receipt(order: Order, listing: Listing, buyer: User) -> bool:
     )
 
 
+def send_payment_failed(order: Order, listing: Listing, buyer: User) -> bool:
+    """Paiement Mobile Money échoué / refusé — l'acheteur doit être averti
+    immédiatement : sa commande est annulée mais il peut recommencer."""
+    name, ref = _name(buyer), _order_ref(order)
+    amount = _fmt_cdf(order.amount_cdf)
+    url = f"{settings.public_base_url.rstrip('/')}/orders"
+    subject = f"Paiement non abouti — commande {ref}"
+    text = (
+        f"Bonjour {name},\n\n"
+        f"Le paiement de {amount} pour « {listing.title} » (commande {ref}) n'a pas abouti. "
+        "Aucun montant ne vous a été débité.\n\n"
+        "Causes fréquentes : solde Mobile Money insuffisant, demande expirée ou refusée "
+        "sur votre téléphone, ou interruption réseau.\n\n"
+        "Vous pouvez relancer la commande et réessayer le paiement depuis l'application.\n\n"
+        f"— SombaTeka\n{url}"
+    )
+    html = (
+        f"<p>Bonjour <strong>{name}</strong>,</p>"
+        f'<p>Le paiement de <strong>{amount}</strong> pour '
+        f'«&nbsp;{listing.title}&nbsp;» (commande <strong>{ref}</strong>) '
+        "<strong>n'a pas abouti</strong>.</p>"
+        '<p style="background:#f0fdf4;border-left:3px solid #22c55e;padding:12px 14px">'
+        "<strong>Aucun montant n'a été débité</strong> de votre compte.</p>"
+        "<p><strong>Causes fréquentes :</strong></p>"
+        "<ul>"
+        "<li>Solde Mobile Money insuffisant</li>"
+        "<li>Demande de paiement expirée ou refusée sur votre téléphone</li>"
+        "<li>Interruption réseau pendant la validation</li>"
+        "</ul>"
+        "<p>Vous pouvez relancer la commande et réessayer le paiement à tout moment — "
+        "l'article reste disponible tant qu'aucune autre commande n'est payée.</p>"
+        + _cta(url, "Réessayer le paiement")
+        + "<p>Besoin d'aide ? Répondez à cet e-mail ou contactez le support.<br>"
+        "— L'équipe SombaTeka</p>"
+    )
+    return _send(
+        buyer, email_type="billing", subject=subject, text=text, html_body=html,
+        data={"order_ref": ref, "title": listing.title, "amount": order.amount_cdf},
+        key=f"payment_failed:{order.id}",
+    )
+
+
 def send_seller_payment_secured(order: Order, listing: Listing, seller: User) -> bool:
     name, ref = _name(seller), _order_ref(order)
     amount = _fmt_cdf(order.amount_cdf)
@@ -247,7 +289,7 @@ def send_seller_payment_secured(order: Order, listing: Listing, seller: User) ->
         + "<p>— L'équipe SombaTeka</p>"
     )
     return _send(
-        seller, email_type="order", subject=subject, text=text, html_body=html,
+        seller, email_type="billing", subject=subject, text=text, html_body=html,
         data={"order_ref": ref, "title": listing.title, "amount": order.amount_cdf},
         key=f"seller_paid:{order.id}",
     )
@@ -331,7 +373,7 @@ def send_order_refunded(order: Order, listing: Listing, buyer: User) -> bool:
         + "<p>— L'équipe SombaTeka</p>"
     )
     return _send(
-        buyer, email_type="order", subject=subject, text=text, html_body=html,
+        buyer, email_type="billing", subject=subject, text=text, html_body=html,
         data={"order_ref": ref, "title": listing.title, "amount": order.amount_cdf},
         key=f"refund:{order.id}",
     )
@@ -362,7 +404,7 @@ def send_unread_messages_reminder(user: User, *, count: int, senders: list[str])
         + "<p>— L'équipe SombaTeka</p>"
     )
     return _send(
-        user, email_type="notification", subject=subject, text=text, html_body=html,
+        user, email_type="message", subject=subject, text=text, html_body=html,
         data={"count": count, "senders": senders}, key=f"msgrem:{user.id}",
         require_verified=True,
     )
@@ -393,7 +435,7 @@ def send_cart_reminder(user: User, *, items: list[CartItem]) -> bool:
         + "<p>— L'équipe SombaTeka</p>"
     )
     return _send(
-        user, email_type="notification", subject=subject, text=text, html_body=html,
+        user, email_type="digest", subject=subject, text=text, html_body=html,
         data={"count": count, "titles": titles, "total": total}, key=f"cart:{user.id}",
         require_verified=True,
     )
