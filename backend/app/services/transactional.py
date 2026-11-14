@@ -350,6 +350,37 @@ def send_order_completed_seller(order: Order, listing: Listing, seller: User, *,
     )
 
 
+def send_payout_completed(seller: User, *, amount_cdf: int, order_ref: str, title: str) -> bool:
+    """Reversement vendeur exécuté — 'vous avez été payé'."""
+    name = _name(seller)
+    amount = _fmt_cdf(amount_cdf)
+    url = f"{settings.public_base_url.rstrip('/')}/orders"
+    subject = f"Reversement effectué — {amount} ({order_ref})"
+    text = (
+        f"Bonjour {name},\n\n"
+        f"Le reversement de {amount} pour « {title} » ({order_ref}) a été exécuté "
+        "sur votre compte Mobile Money.\n\n"
+        "Le détail de la transaction est disponible dans votre espace vendeur.\n\n"
+        f"— SombaTeka\n{url}"
+    )
+    html = (
+        f"<p>Bonjour <strong>{name}</strong>,</p>"
+        f'<p>Votre reversement de <strong>{amount}</strong> pour '
+        f'«&nbsp;{title}&nbsp;» (<strong>{order_ref}</strong>) a été exécuté '
+        "sur votre compte Mobile Money.</p>"
+        '<p style="background:#eff6ff;border-left:3px solid #2563eb;padding:12px 14px">'
+        "Ce montant correspond au prix de vente moins la commission SombaTeka. "
+        "Le détail de la transaction est disponible dans votre espace vendeur.</p>"
+        + _cta(url, "Voir mes ventes")
+        + "<p>Merci de votre confiance.<br>— L'équipe SombaTeka</p>"
+    )
+    return _send(
+        seller, email_type="billing", subject=subject, text=text, html_body=html,
+        data={"order_ref": order_ref, "amount": amount_cdf},
+        key=f"payout:{order_ref}:{seller.id}",
+    )
+
+
 def send_order_refunded(order: Order, listing: Listing, buyer: User) -> bool:
     name, ref = _name(buyer), _order_ref(order)
     amount = _fmt_cdf(order.amount_cdf)

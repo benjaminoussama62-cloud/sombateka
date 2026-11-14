@@ -5,7 +5,16 @@ from sqlalchemy import select
 
 from app.celery_app import celery_app
 from app.db import SessionLocal
-from app.models import LedgerEntry, LedgerEntryType, Order, OrderStatus, PayoutStatus, SellerPayout
+from app.models import (
+    LedgerEntry,
+    LedgerEntryType,
+    Listing,
+    Order,
+    OrderStatus,
+    PayoutStatus,
+    SellerPayout,
+    User,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +47,31 @@ def process_scheduled_payouts() -> dict:
                     description=f"Reversement commande #{payout.order_id}",
                 )
             )
+            try:
+                seller = db.get(User, payout.seller_id)
+                listing = db.get(Listing, order.listing_id) if order else None
+                if seller:
+                    from app.services.notifications import push_notification
+                    from app.services.transactional import send_payout_completed
+
+                    ref = f"ST-{payout.order_id:06d}"
+                    push_notification(
+                        db,
+                        user_id=seller.id,
+                        type="payout_completed",
+                        title="Reversement effectué",
+                        body=f"{payout.amount_cdf} FC reversés pour la commande {ref}.",
+                        order_id=payout.order_id,
+                        commit=False,
+                    )
+                    send_payout_completed(
+                        seller,
+                        amount_cdf=payout.amount_cdf,
+                        order_ref=ref,
+                        title=listing.title if listing else f"commande {ref}",
+                    )
+            except Exception:
+                logger.exception("payout notification/email failed (payout=%s)", payout.id)
             processed += 1
         db.commit()
     except Exception as e:
