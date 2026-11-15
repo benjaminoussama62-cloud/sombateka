@@ -112,6 +112,7 @@ def _ensure_mail_tables() -> None:
 
         MailThread.__table__.create(bind=engine, checkfirst=True)
         MailThreadMessage.__table__.create(bind=engine, checkfirst=True)
+        _ensure_column("mail_threads", "read_at", "TIMESTAMPTZ")
     except Exception as exc:
         logger.warning("Patch tables mail: %s", exc)
 

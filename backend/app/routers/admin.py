@@ -225,9 +225,13 @@ def admin_stats(
         )
     if has_permission(staff.role, PERM_SUPPORT_VIEW):
         out["support_unread"] = count_unread_support(db)
-        from app.services.mail_threads import count_open_threads
+        from app.services.mail_threads import (
+            count_open_threads,
+            count_unread_threads,
+        )
 
         out["mail_open"] = count_open_threads(db)
+        out["mail_unread"] = count_unread_threads(db)
     if has_permission(staff.role, PERM_CHAT_VIEW):
         from app.services.admin_chat import count_unread_chat
 

@@ -192,6 +192,7 @@ async function refreshStats() {
 
 function navigate(page) {
   if (page !== "chat") stopChatPoll();
+  if (page !== "mail") stopMailPoll();
   const me = getMe();
   const btn = $(`.nav-item[data-page="${page}"]`);
   const perm = btn?.dataset?.perm;
@@ -1082,152 +1083,433 @@ async function openSupportThread(userId) {
 }
 
 let mailSelectedThreadId = null;
+let mailStatusFilter = "all";
+let mailSearchQuery = "";
+let mailPollTimer = null;
+let mailAgentsCache = null;
+
+const MAIL_STATUS_LABELS = {
+  open: "Ouvert",
+  in_progress: "En cours",
+  resolved: "Résolu",
+  closed: "Fermé",
+};
+
+const MAIL_CANNED = [
+  {
+    label: "Accusé de réception",
+    text: "Bonjour,\n\nNous avons bien reçu votre message et nous vous remercions de nous avoir contactés. Notre équipe examine votre demande et reviendra vers vous dans les plus brefs délais.",
+  },
+  {
+    label: "Demande d'informations",
+    text: "Bonjour,\n\nAfin de traiter votre demande au mieux, pourriez-vous nous préciser les éléments suivants :\n- Numéro de commande ou d'annonce concernée\n- Date approximative de l'opération\n- Toute capture d'écran utile\n\nMerci d'avance.",
+  },
+  {
+    label: "Suivi de commande",
+    text: "Bonjour,\n\nConcernant votre commande : elle est en cours de traitement. Les fonds sont conservés en séquestre SombaTeka jusqu'à confirmation de réception — votre paiement est protégé.\n\nNous restons à votre disposition.",
+  },
+  {
+    label: "Remboursement",
+    text: "Bonjour,\n\nVotre demande de remboursement a été prise en compte. Les fonds en séquestre seront reversés selon votre moyen de paiement initial. Vous recevrez une confirmation dès l'opération effectuée.",
+  },
+  {
+    label: "Problème résolu",
+    text: "Bonjour,\n\nNous avons le plaisir de vous informer que votre demande a été traitée et résolue. N'hésitez pas à nous réécrire si le problème persiste ou pour toute autre question.",
+  },
+  {
+    label: "Clôture cordiale",
+    text: "Nous restons à votre disposition pour toute autre question. Merci de votre confiance en SombaTeka.",
+  },
+];
+
+function stopMailPoll() {
+  if (mailPollTimer) {
+    clearInterval(mailPollTimer);
+    mailPollTimer = null;
+  }
+}
+
+function mailAvatar(name, addr) {
+  const seed = (name || addr || "?").trim();
+  const initial = (seed[0] || "?").toUpperCase();
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) % 360;
+  return `<span class="mail-avatar" style="background:hsl(${h},55%,42%)">${escapeHtml(initial)}</span>`;
+}
+
+function mailTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  return sameDay
+    ? d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
+    : d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+}
 
 async function renderMail() {
   const me = getMe();
   const canReply = hasPerm(me, PERM.SUPPORT_REPLY);
   const el = $("#page-mail");
   el.innerHTML = `
-    <p class="panel-hint support-intro">
-      Les e-mails reçus sur <strong>*@sombatekaonline.com</strong> arrivent ici en fils de conversation.
-      Votre réponse part par e-mail sous <strong>votre nom · l'adresse sollicitée</strong> (support@, privacy@, …).
-    </p>
-    <div class="support-desk">
-      <div class="panel support-list-panel">
-        <div class="panel-head">Fils <span id="mail-open-count"></span></div>
-        <div id="mail-thread-list" class="support-conv-list"><div class="empty">Chargement…</div></div>
-      </div>
-      <div class="panel support-thread-panel">
-        <div class="panel-head" id="mail-thread-title">Sélectionnez un fil</div>
-        <div id="mail-thread-body" class="support-thread-body">
-          <div class="empty">Choisissez un fil à gauche pour lire et répondre.</div>
+    <div class="mail-desk">
+      <aside class="mail-side">
+        <div class="mail-side-head">
+          <div class="mail-search-wrap">
+            <input id="mail-search" type="search" placeholder="Rechercher (nom, e-mail, sujet)…" value="${escapeHtml(mailSearchQuery)}">
+          </div>
+          <div class="mail-tabs" id="mail-tabs">
+            ${["all", "open", "in_progress", "resolved", "closed"].map((s) => `
+              <button type="button" class="mail-tab ${mailStatusFilter === s ? "active" : ""}" data-status="${s}">
+                ${s === "all" ? "Tous" : MAIL_STATUS_LABELS[s]}
+              </button>`).join("")}
+          </div>
+        </div>
+        <div id="mail-thread-list" class="mail-list"><div class="empty">Chargement…</div></div>
+      </aside>
+      <section class="mail-main">
+        <header class="mail-head" id="mail-head">
+          <div class="empty mail-head-empty">Sélectionnez une conversation</div>
+        </header>
+        <div id="mail-thread-body" class="mail-body">
+          <div class="empty mail-big-empty">
+            <div class="mail-big-icon">✉</div>
+            <p>Centre de courriels SombaTeka</p>
+            <small>Tous les messages reçus sur *@sombatekaonline.com arrivent ici.<br>Choisissez un fil à gauche pour lire, répondre ou annoter.</small>
+          </div>
         </div>
         ${canReply ? `
-          <div id="mail-thread-actions" class="mail-thread-actions" hidden>
-            <label class="mail-status-label">Statut
-              <select id="mail-status-select" class="role-select">
-                <option value="open">Ouvert</option>
-                <option value="in_progress">En cours</option>
-                <option value="resolved">Résolu</option>
-                <option value="closed">Fermé</option>
-              </select>
-            </label>
+        <footer class="mail-composer" id="mail-composer" hidden>
+          <div class="mail-composer-tabs">
+            <button type="button" class="mail-ctab active" data-mode="reply">Réponse e-mail</button>
+            <button type="button" class="mail-ctab" data-mode="note">Note interne</button>
+            <select id="mail-canned" class="mail-canned" title="Réponses types">
+              <option value="">Réponses types…</option>
+              ${MAIL_CANNED.map((c, i) => `<option value="${i}">${escapeHtml(c.label)}</option>`).join("")}
+            </select>
           </div>
-          <form id="mail-reply-form" class="support-reply-form" hidden>
-            <textarea id="mail-reply-input" rows="4" maxlength="10000" placeholder="Votre réponse — envoyée par e-mail sous « Vous — SombaTeka Support »…" required></textarea>
-            <div class="support-reply-actions">
-              <button type="submit" class="btn btn-primary">Envoyer l'e-mail</button>
-            </div>
-          </form>
-        ` : ""}
-      </div>
+          <textarea id="mail-reply-input" rows="4" maxlength="10000"
+            placeholder="Votre réponse — envoyée sous « Vous — SombaTeka Support » à l'adresse sollicitée…"></textarea>
+          <div class="mail-composer-actions">
+            <span class="mail-composer-hint" id="mail-composer-hint">Le client recevra un e-mail signé de votre nom.</span>
+            <button type="button" id="mail-send-btn" class="btn btn-primary">Envoyer</button>
+          </div>
+        </footer>` : ""}
+      </section>
+      <aside class="mail-context" id="mail-context">
+        <div class="mail-ctx-empty empty">Le contexte client s'affichera ici.</div>
+      </aside>
     </div>
   `;
 
-  const data = await api("/admin/mail/threads");
+  $("#mail-tabs").querySelectorAll(".mail-tab").forEach((b) => {
+    b.addEventListener("click", () => {
+      mailStatusFilter = b.dataset.status;
+      $$("#mail-tabs .mail-tab").forEach((x) => x.classList.toggle("active", x === b));
+      refreshMailList(true);
+    });
+  });
+
+  let searchT = null;
+  $("#mail-search").addEventListener("input", (e) => {
+    clearTimeout(searchT);
+    searchT = setTimeout(() => {
+      mailSearchQuery = e.target.value.trim();
+      refreshMailList(true);
+    }, 350);
+  });
+
+  if (canReply) wireMailComposer();
+
+  stopMailPoll();
+  mailPollTimer = setInterval(() => {
+    const active = document.activeElement;
+    if (active && active.id === "mail-reply-input") return;
+    refreshMailList(false);
+  }, 25000);
+
+  await refreshMailList(true);
+}
+
+async function refreshMailList(autoOpen) {
+  const params = new URLSearchParams();
+  if (mailStatusFilter !== "all") params.set("status", mailStatusFilter);
+  if (mailSearchQuery) params.set("q", mailSearchQuery);
+  let data;
+  try {
+    data = await api(`/admin/mail/threads?${params}`);
+  } catch (ex) {
+    const list = $("#mail-thread-list");
+    if (list) list.innerHTML = `<div class="empty">Erreur de chargement.<br><small>${escapeHtml(ex.message)}</small></div>`;
+    return;
+  }
   const items = data.items || [];
-  if (data.open_count) $("#mail-open-count").textContent = `· ${data.open_count} ouvert(s)`;
   const list = $("#mail-thread-list");
+  if (!list) return;
+
   if (!items.length) {
-    list.innerHTML = '<div class="empty">Aucun courriel pour le moment.</div>';
+    list.innerHTML = '<div class="empty">Aucun courriel dans cette vue.</div>';
+    if (autoOpen) {
+      mailSelectedThreadId = null;
+      $("#mail-head").innerHTML = '<div class="empty mail-head-empty">Aucune conversation</div>';
+      $("#mail-thread-body").innerHTML = '<div class="empty">Aucun fil à afficher.</div>';
+      const ctx = $("#mail-context");
+      if (ctx) ctx.innerHTML = '<div class="mail-ctx-empty empty">—</div>';
+    }
     return;
   }
 
-  const statusLabel = { open: "Ouvert", in_progress: "En cours", resolved: "Résolu", closed: "Fermé" };
   list.innerHTML = items.map((t) => `
-    <button type="button" class="support-conv-item ${mailSelectedThreadId === t.id ? "active" : ""}" data-thread="${t.id}">
-      <div class="support-conv-top">
-        <strong>${escapeHtml(t.remote_name || t.remote_addr)}</strong>
-        <span class="mail-status mail-status-${t.status}">${statusLabel[t.status] || t.status}</span>
-      </div>
-      <div class="support-conv-preview">${escapeHtml(t.subject || "—")}</div>
-      <div class="support-conv-meta">${formatDate(t.updated_at)} · ${escapeHtml(t.local_addr)} · ${t.message_count} msg</div>
+    <button type="button" class="mail-item ${mailSelectedThreadId === t.id ? "active" : ""} ${t.unread ? "unread" : ""}" data-thread="${t.id}">
+      ${mailAvatar(t.remote_name, t.remote_addr)}
+      <span class="mail-item-main">
+        <span class="mail-item-top">
+          <strong>${escapeHtml(t.remote_name || t.remote_addr)}</strong>
+          <time>${mailTime(t.updated_at)}</time>
+        </span>
+        <span class="mail-item-subject">${escapeHtml(t.subject || "(sans objet)")}</span>
+        <span class="mail-item-preview">${t.last_direction === "out" ? "Vous : " : t.last_direction === "note" ? "Note : " : ""}${escapeHtml((t.last_preview || "").slice(0, 90))}</span>
+        <span class="mail-item-meta">
+          <span class="mail-status mail-status-${t.status}">${MAIL_STATUS_LABELS[t.status] || t.status}</span>
+          ${t.assigned_admin ? `<span class="mail-assignee">→ ${escapeHtml(t.assigned_admin)}</span>` : ""}
+          ${t.unread ? '<span class="mail-dot" title="Non lu"></span>' : ""}
+        </span>
+      </span>
     </button>
   `).join("");
 
-  list.querySelectorAll(".support-conv-item").forEach((btn) => {
-    btn.addEventListener("click", () => openMailThread(Number(btn.dataset.thread)));
+  list.querySelectorAll(".mail-item").forEach((b) => {
+    b.addEventListener("click", () => openMailThread(Number(b.dataset.thread)));
   });
 
-  if (mailSelectedThreadId && items.some((t) => t.id === mailSelectedThreadId)) {
-    await openMailThread(mailSelectedThreadId);
-  } else {
-    await openMailThread(items[0].id);
+  if (autoOpen) {
+    const target = mailSelectedThreadId && items.some((t) => t.id === mailSelectedThreadId)
+      ? mailSelectedThreadId
+      : items[0].id;
+    await openMailThread(target);
   }
 }
 
-async function openMailThread(threadId) {
+function wireMailComposer() {
+  let mode = "reply";
+  const input = $("#mail-reply-input");
+  const btn = $("#mail-send-btn");
+  const hint = $("#mail-composer-hint");
+  const canned = $("#mail-canned");
+
+  $$(".mail-ctab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      mode = tab.dataset.mode;
+      $$(".mail-ctab").forEach((x) => x.classList.toggle("active", x === tab));
+      if (mode === "note") {
+        input.placeholder = "Note interne — visible uniquement par l'équipe, jamais envoyée au client…";
+        btn.textContent = "Ajouter la note";
+        btn.classList.add("btn-note");
+        hint.textContent = "Privé : le client ne verra pas cette note.";
+      } else {
+        input.placeholder = "Votre réponse — envoyée sous « Vous — SombaTeka Support » à l'adresse sollicitée…";
+        btn.textContent = "Envoyer";
+        btn.classList.remove("btn-note");
+        hint.textContent = "Le client recevra un e-mail signé de votre nom.";
+      }
+    });
+  });
+
+  canned.addEventListener("change", () => {
+    if (canned.value === "") return;
+    const tpl = MAIL_CANNED[Number(canned.value)];
+    if (tpl) {
+      input.value = tpl.text;
+      input.focus();
+    }
+    canned.value = "";
+  });
+
+  btn.addEventListener("click", async () => {
+    const content = input.value.trim();
+    if (!content || !mailSelectedThreadId) return;
+    btn.disabled = true;
+    try {
+      if (mode === "note") {
+        await api(`/admin/mail/threads/${mailSelectedThreadId}/note`, {
+          method: "POST",
+          body: JSON.stringify({ content }),
+        });
+        toast("Note interne ajoutée.");
+      } else {
+        await api(`/admin/mail/threads/${mailSelectedThreadId}/reply`, {
+          method: "POST",
+          body: JSON.stringify({ content }),
+        });
+        toast("Réponse envoyée par e-mail au client.");
+      }
+      input.value = "";
+      await refreshStats();
+      await refreshMailList(false);
+      await openMailThread(mailSelectedThreadId, true);
+    } catch (ex) {
+      toast(ex.message, true);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+function mailMsgHtml(m) {
+  if (m.html) {
+    const safe = String(m.html).replace(/"/g, "&quot;");
+    return `
+      <div class="mail-msg-frame-wrap">
+        <iframe class="mail-html-frame" sandbox="" srcdoc="${safe}" loading="lazy" title="Contenu HTML du message"></iframe>
+        <details class="mail-text-alt"><summary>Version texte</summary><div class="mail-msg-text">${escapeHtml(m.text || "(pas de version texte)").replace(/\n/g, "<br>")}</div></details>
+      </div>`;
+  }
+  return `<div class="mail-msg-text">${escapeHtml(m.text || "(message vide)").replace(/\n/g, "<br>")}</div>`;
+}
+
+async function openMailThread(threadId, keepScroll) {
   mailSelectedThreadId = threadId;
-  $$(".support-conv-item[data-thread]").forEach((b) =>
+  $$(".mail-item[data-thread]").forEach((b) =>
     b.classList.toggle("active", Number(b.dataset.thread) === threadId)
   );
 
-  const title = $("#mail-thread-title");
+  const head = $("#mail-head");
   const body = $("#mail-thread-body");
-  const form = $("#mail-reply-form");
-  const actions = $("#mail-thread-actions");
-  body.innerHTML = '<div class="empty">Chargement…</div>';
+  const composer = $("#mail-composer");
+  if (!keepScroll) body.innerHTML = '<div class="empty">Chargement…</div>';
 
   const data = await api(`/admin/mail/threads/${threadId}`);
   const t = data.thread;
-  title.innerHTML = `
-    <span>${escapeHtml(t.subject || "(sans objet)")}</span>
-    <small class="pii-masked">${escapeHtml(t.remote_name || "")} &lt;${escapeHtml(t.remote_addr)}&gt; → ${escapeHtml(t.local_addr)}</small>
+  const me = getMe();
+  const canReply = hasPerm(me, PERM.SUPPORT_REPLY);
+
+  head.innerHTML = `
+    <div class="mail-head-info">
+      <h3>${escapeHtml(t.subject || "(sans objet)")}</h3>
+      <div class="mail-head-meta">
+        ${mailAvatar(t.remote_name, t.remote_addr)}
+        <span><strong>${escapeHtml(t.remote_name || t.remote_addr)}</strong>
+        <small>${escapeHtml(t.remote_addr)} → ${escapeHtml(t.local_addr)}</small></span>
+      </div>
+    </div>
+    <div class="mail-head-actions">
+      ${canReply ? '<select id="mail-assign-select" class="role-select" title="Assigné à"><option value="">Assigné à…</option></select>' : ""}
+      <select id="mail-status-select" class="role-select" title="Statut">
+        ${Object.entries(MAIL_STATUS_LABELS).map(([v, l]) =>
+          `<option value="${v}" ${t.status === v ? "selected" : ""}>${l}</option>`).join("")}
+      </select>
+    </div>
   `;
 
-  const sel = $("#mail-status-select");
-  if (sel) {
-    sel.value = t.status;
-    sel.onchange = async () => {
-      try {
-        await api(`/admin/mail/threads/${threadId}/status`, {
-          method: "POST",
-          body: JSON.stringify({ status: sel.value }),
-        });
-        toast("Statut mis à jour.");
-        await renderMail();
-      } catch (ex) {
-        toast(ex.message, true);
-      }
-    };
+  const statusSel = $("#mail-status-select");
+  statusSel.onchange = async () => {
+    try {
+      await api(`/admin/mail/threads/${threadId}/status`, {
+        method: "POST",
+        body: JSON.stringify({ status: statusSel.value }),
+      });
+      toast("Statut mis à jour.");
+      await refreshMailList(false);
+    } catch (ex) {
+      toast(ex.message, true);
+    }
+  };
+
+  const assignSel = $("#mail-assign-select");
+  if (assignSel) {
+    try {
+      if (!mailAgentsCache) mailAgentsCache = (await api("/admin/mail/agents")).items || [];
+      assignSel.innerHTML = '<option value="">Non assigné</option>' + mailAgentsCache.map((a) =>
+        `<option value="${a.id}" ${t.assigned_admin === a.name ? "selected" : ""}>${escapeHtml(a.name)}</option>`).join("");
+      assignSel.onchange = async () => {
+        try {
+          await api(`/admin/mail/threads/${threadId}/assign`, {
+            method: "POST",
+            body: JSON.stringify({ admin_id: assignSel.value ? Number(assignSel.value) : null }),
+          });
+          toast("Assignation mise à jour.");
+          await refreshMailList(false);
+        } catch (ex) {
+          toast(ex.message, true);
+        }
+      };
+    } catch { /* agents indisponibles pour ce rôle */ }
   }
-  if (actions) actions.hidden = false;
 
   if (!data.items.length) {
     body.innerHTML = '<div class="empty">Aucun message dans ce fil.</div>';
   } else {
-    body.innerHTML = data.items.map((m) => `
-      <div class="support-bubble ${m.direction === "out" ? "from-team" : "from-user"}">
-        <div class="support-bubble-meta">${m.direction === "out"
-          ? escapeHtml(m.from_name || "SombaTeka Support")
-          : escapeHtml(m.from_name || m.from_addr || "Client")} · ${formatDate(m.created_at)}</div>
-        <div class="support-bubble-text">${escapeHtml(m.text || "(contenu HTML uniquement)").replace(/\n/g, "<br>")}</div>
-      </div>
-    `).join("");
-    body.scrollTop = body.scrollHeight;
+    body.innerHTML = data.items.map((m) => {
+      if (m.direction === "note") {
+        return `
+          <div class="mail-msg mail-note">
+            <div class="mail-msg-meta">Note interne — ${escapeHtml(m.agent || m.from_name || "Équipe")} · ${formatDate(m.created_at)}</div>
+            <div class="mail-msg-text">${escapeHtml(m.text || "").replace(/\n/g, "<br>")}</div>
+          </div>`;
+      }
+      const out = m.direction === "out";
+      return `
+        <div class="mail-msg ${out ? "mail-out" : "mail-in"}">
+          <div class="mail-msg-meta">
+            ${out
+              ? `${escapeHtml(m.agent || m.from_name || "SombaTeka Support")} <span class="mail-dir-tag">→ e-mail envoyé</span>`
+              : `${escapeHtml(m.from_name || m.from_addr || "Client")} <span class="mail-dir-tag">&lt;${escapeHtml(m.from_addr || "")}&gt;</span>`}
+            · ${formatDate(m.created_at)}
+          </div>
+          ${mailMsgHtml(m)}
+        </div>`;
+    }).join("");
+    if (!keepScroll) body.scrollTop = body.scrollHeight;
   }
 
-  if (form) {
-    form.hidden = false;
-    form.onsubmit = async (e) => {
-      e.preventDefault();
-      const input = $("#mail-reply-input");
-      const content = input.value.trim();
-      if (!content) return;
-      try {
-        await api(`/admin/mail/threads/${threadId}/reply`, {
-          method: "POST",
-          body: JSON.stringify({ content }),
-        });
-        input.value = "";
-        toast("Réponse envoyée par e-mail au client.");
-        await refreshStats();
-        await renderMail();
-      } catch (ex) {
-        toast(ex.message, true);
-      }
-    };
-  }
+  renderMailContext(t, data.customer);
+  if (composer) composer.hidden = false;
+  await refreshStats();
+}
+
+function renderMailContext(t, customer) {
+  const ctx = $("#mail-context");
+  if (!ctx) return;
+  const acc = customer
+    ? `
+      <div class="mail-ctx-card">
+        <div class="mail-ctx-row">${mailAvatar(customer.display_name, t.remote_addr)}
+          <div><strong>${escapeHtml(customer.display_name || "Utilisateur")}</strong>
+          <small>Compte #${customer.user_id} · ${escapeHtml(customer.role)}</small></div>
+        </div>
+        ${customer.is_banned ? '<div class="mail-ctx-alert">Compte banni</div>' : ""}
+        <dl class="mail-ctx-dl">
+          <div><dt>Téléphone</dt><dd>${escapeHtml(customer.phone_e164 || "—")}</dd></div>
+          <div><dt>Commandes (achat)</dt><dd>${customer.orders_as_buyer}</dd></div>
+          <div><dt>Ventes</dt><dd>${customer.orders_as_seller}</dd></div>
+          <div><dt>Annonces</dt><dd>${customer.listings_count}</dd></div>
+          <div><dt>Membre depuis</dt><dd>${formatDate(customer.created_at)}</dd></div>
+        </dl>
+      </div>`
+    : `
+      <div class="mail-ctx-card">
+        <div class="mail-ctx-row">${mailAvatar(t.remote_name, t.remote_addr)}
+          <div><strong>${escapeHtml(t.remote_name || "Expéditeur")}</strong>
+          <small>${escapeHtml(t.remote_addr)}</small></div>
+        </div>
+        <div class="mail-ctx-muted">Aucun compte SombaTeka lié à cette adresse e-mail.</div>
+      </div>`;
+
+  ctx.innerHTML = `
+    <div class="mail-ctx-section">
+      <h4>Client</h4>
+      ${acc}
+    </div>
+    <div class="mail-ctx-section">
+      <h4>Conversation</h4>
+      <dl class="mail-ctx-dl">
+        <div><dt>Fil</dt><dd>#${t.id}</dd></div>
+        <div><dt>Boîte sollicitée</dt><dd>${escapeHtml(t.local_addr)}</dd></div>
+        <div><dt>Ouvert le</dt><dd>${formatDate(t.created_at)}</dd></div>
+        <div><dt>Assigné à</dt><dd>${escapeHtml(t.assigned_admin || "—")}</dd></div>
+      </dl>
+    </div>
+  `;
 }
 
 let chatSelectedRoomId = null;

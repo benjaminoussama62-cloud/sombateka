@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import MailThread, MailThreadMessage, User
@@ -208,3 +208,94 @@ def count_open_threads(db: Session) -> int:
         )
         or 0
     )
+
+
+def mark_thread_read(db: Session, thread: MailThread) -> None:
+    thread.read_at = datetime.now(timezone.utc)
+    db.flush()
+
+
+def record_note(
+    db: Session, *, thread: MailThread, staff: User, content: str
+) -> MailThreadMessage:
+    """Note interne — visible uniquement par l'équipe, jamais envoyée."""
+    now = datetime.now(timezone.utc)
+    msg = MailThreadMessage(
+        thread_id=thread.id,
+        direction="note",
+        sender_id=staff.id,
+        from_addr=None,
+        from_name=agent_display_name(staff),
+        text=content[:_MAX_TEXT],
+        created_at=now,
+    )
+    db.add(msg)
+    thread.updated_at = now
+    db.flush()
+    return msg
+
+
+def customer_context(db: Session, remote_addr: str) -> dict | None:
+    """Contexte client : si l'expéditeur a un compte SombaTeka (email match)."""
+    from app.models import Listing, Order
+
+    user = db.scalar(
+        select(User).where(func.lower(User.email) == remote_addr.lower())
+    )
+    if not user:
+        return None
+    orders = int(
+        db.scalar(
+            select(func.count()).select_from(Order).where(Order.buyer_id == user.id)
+        )
+        or 0
+    )
+    sales = int(
+        db.scalar(
+            select(func.count())
+            .select_from(Order)
+            .join(Listing, Order.listing_id == Listing.id)
+            .where(Listing.seller_id == user.id)
+        )
+        or 0
+    )
+    listings = int(
+        db.scalar(
+            select(func.count()).select_from(Listing).where(Listing.seller_id == user.id)
+        )
+        or 0
+    )
+    return {
+        "user_id": user.id,
+        "display_name": user.display_name,
+        "phone_e164": user.phone_e164,
+        "role": user.role.value,
+        "is_banned": user.is_banned,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+        "orders_as_buyer": orders,
+        "orders_as_seller": sales,
+        "listings_count": listings,
+    }
+
+
+def count_unread_threads(db: Session) -> int:
+    """Fils actifs dont le dernier message entrant est postérieur au read_at."""
+    last_in = (
+        select(
+            MailThreadMessage.thread_id.label("tid"),
+            func.max(MailThreadMessage.created_at).label("ts"),
+        )
+        .where(MailThreadMessage.direction == "in")
+        .group_by(MailThreadMessage.thread_id)
+        .subquery()
+    )
+    q = (
+        select(func.count())
+        .select_from(MailThread)
+        .join(last_in, last_in.c.tid == MailThread.id)
+        .where(
+            MailThread.status.in_(["open", "in_progress"]),
+            or_(MailThread.read_at.is_(None), last_in.c.ts > MailThread.read_at),
+        )
+    )
+    return int(db.scalar(q) or 0)
