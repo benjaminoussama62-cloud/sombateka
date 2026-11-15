@@ -618,3 +618,12 @@ body.dashboard-page { background: #f1f5f9; color: var(--text); }
   .main { height: auto; max-height: none; overflow: visible; }
   .page-content { overflow-y: visible; min-height: 50vh; }
 }
+
+/* Helpdesk courriels */
+.mail-status { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--panel-alt, rgba(255,255,255,.08)); }
+.mail-status-open { color: var(--warn); }
+.mail-status-in_progress { color: var(--accent, #4f8dff); }
+.mail-status-resolved { color: var(--ok, #3ddc84); }
+.mail-status-closed { color: var(--muted, #8a93a6); }
+.mail-thread-actions { padding: 8px 12px; border-top: 1px solid var(--border, rgba(255,255,255,.08)); }
+.mail-status-label { font-size: 13px; display: flex; align-items: center; gap: 8px; }

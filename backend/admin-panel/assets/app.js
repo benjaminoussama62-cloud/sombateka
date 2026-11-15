@@ -26,6 +26,7 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const PAGES = {
   dashboard: { title: "Tableau de bord" },
   support: { title: "Centre d'aide" },
+  mail: { title: "Courriels" },
   chat: { title: "Chat équipe" },
   kyc: { title: "Comptes pro" },
   reports: { title: "Signalements" },
@@ -214,6 +215,7 @@ async function loadPage(page) {
     if (page === "dashboard") {
       await renderDashboard();
     } else if (page === "support") await renderSupport();
+    else if (page === "mail") await renderMail();
     else if (page === "chat") await renderChat();
     else if (page === "kyc") await renderKyc();
     else if (page === "reports") await renderReports();
@@ -1077,6 +1079,155 @@ async function openSupportThread(userId) {
   }
 
   await refreshStats();
+}
+
+let mailSelectedThreadId = null;
+
+async function renderMail() {
+  const me = getMe();
+  const canReply = hasPerm(me, PERM.SUPPORT_REPLY);
+  const el = $("#page-mail");
+  el.innerHTML = `
+    <p class="panel-hint support-intro">
+      Les e-mails reçus sur <strong>*@sombatekaonline.com</strong> arrivent ici en fils de conversation.
+      Votre réponse part par e-mail sous <strong>votre nom · l'adresse sollicitée</strong> (support@, privacy@, …).
+    </p>
+    <div class="support-desk">
+      <div class="panel support-list-panel">
+        <div class="panel-head">Fils <span id="mail-open-count"></span></div>
+        <div id="mail-thread-list" class="support-conv-list"><div class="empty">Chargement…</div></div>
+      </div>
+      <div class="panel support-thread-panel">
+        <div class="panel-head" id="mail-thread-title">Sélectionnez un fil</div>
+        <div id="mail-thread-body" class="support-thread-body">
+          <div class="empty">Choisissez un fil à gauche pour lire et répondre.</div>
+        </div>
+        ${canReply ? `
+          <div id="mail-thread-actions" class="mail-thread-actions" hidden>
+            <label class="mail-status-label">Statut
+              <select id="mail-status-select" class="role-select">
+                <option value="open">Ouvert</option>
+                <option value="in_progress">En cours</option>
+                <option value="resolved">Résolu</option>
+                <option value="closed">Fermé</option>
+              </select>
+            </label>
+          </div>
+          <form id="mail-reply-form" class="support-reply-form" hidden>
+            <textarea id="mail-reply-input" rows="4" maxlength="10000" placeholder="Votre réponse — envoyée par e-mail sous « Vous — SombaTeka Support »…" required></textarea>
+            <div class="support-reply-actions">
+              <button type="submit" class="btn btn-primary">Envoyer l'e-mail</button>
+            </div>
+          </form>
+        ` : ""}
+      </div>
+    </div>
+  `;
+
+  const data = await api("/admin/mail/threads");
+  const items = data.items || [];
+  if (data.open_count) $("#mail-open-count").textContent = `· ${data.open_count} ouvert(s)`;
+  const list = $("#mail-thread-list");
+  if (!items.length) {
+    list.innerHTML = '<div class="empty">Aucun courriel pour le moment.</div>';
+    return;
+  }
+
+  const statusLabel = { open: "Ouvert", in_progress: "En cours", resolved: "Résolu", closed: "Fermé" };
+  list.innerHTML = items.map((t) => `
+    <button type="button" class="support-conv-item ${mailSelectedThreadId === t.id ? "active" : ""}" data-thread="${t.id}">
+      <div class="support-conv-top">
+        <strong>${escapeHtml(t.remote_name || t.remote_addr)}</strong>
+        <span class="mail-status mail-status-${t.status}">${statusLabel[t.status] || t.status}</span>
+      </div>
+      <div class="support-conv-preview">${escapeHtml(t.subject || "—")}</div>
+      <div class="support-conv-meta">${formatDate(t.updated_at)} · ${escapeHtml(t.local_addr)} · ${t.message_count} msg</div>
+    </button>
+  `).join("");
+
+  list.querySelectorAll(".support-conv-item").forEach((btn) => {
+    btn.addEventListener("click", () => openMailThread(Number(btn.dataset.thread)));
+  });
+
+  if (mailSelectedThreadId && items.some((t) => t.id === mailSelectedThreadId)) {
+    await openMailThread(mailSelectedThreadId);
+  } else {
+    await openMailThread(items[0].id);
+  }
+}
+
+async function openMailThread(threadId) {
+  mailSelectedThreadId = threadId;
+  $$(".support-conv-item[data-thread]").forEach((b) =>
+    b.classList.toggle("active", Number(b.dataset.thread) === threadId)
+  );
+
+  const title = $("#mail-thread-title");
+  const body = $("#mail-thread-body");
+  const form = $("#mail-reply-form");
+  const actions = $("#mail-thread-actions");
+  body.innerHTML = '<div class="empty">Chargement…</div>';
+
+  const data = await api(`/admin/mail/threads/${threadId}`);
+  const t = data.thread;
+  title.innerHTML = `
+    <span>${escapeHtml(t.subject || "(sans objet)")}</span>
+    <small class="pii-masked">${escapeHtml(t.remote_name || "")} &lt;${escapeHtml(t.remote_addr)}&gt; → ${escapeHtml(t.local_addr)}</small>
+  `;
+
+  const sel = $("#mail-status-select");
+  if (sel) {
+    sel.value = t.status;
+    sel.onchange = async () => {
+      try {
+        await api(`/admin/mail/threads/${threadId}/status`, {
+          method: "POST",
+          body: JSON.stringify({ status: sel.value }),
+        });
+        toast("Statut mis à jour.");
+        await renderMail();
+      } catch (ex) {
+        toast(ex.message, true);
+      }
+    };
+  }
+  if (actions) actions.hidden = false;
+
+  if (!data.items.length) {
+    body.innerHTML = '<div class="empty">Aucun message dans ce fil.</div>';
+  } else {
+    body.innerHTML = data.items.map((m) => `
+      <div class="support-bubble ${m.direction === "out" ? "from-team" : "from-user"}">
+        <div class="support-bubble-meta">${m.direction === "out"
+          ? escapeHtml(m.from_name || "SombaTeka Support")
+          : escapeHtml(m.from_name || m.from_addr || "Client")} · ${formatDate(m.created_at)}</div>
+        <div class="support-bubble-text">${escapeHtml(m.text || "(contenu HTML uniquement)").replace(/\n/g, "<br>")}</div>
+      </div>
+    `).join("");
+    body.scrollTop = body.scrollHeight;
+  }
+
+  if (form) {
+    form.hidden = false;
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const input = $("#mail-reply-input");
+      const content = input.value.trim();
+      if (!content) return;
+      try {
+        await api(`/admin/mail/threads/${threadId}/reply`, {
+          method: "POST",
+          body: JSON.stringify({ content }),
+        });
+        input.value = "";
+        toast("Réponse envoyée par e-mail au client.");
+        await refreshStats();
+        await renderMail();
+      } catch (ex) {
+        toast(ex.message, true);
+      }
+    };
+  }
 }
 
 let chatSelectedRoomId = null;

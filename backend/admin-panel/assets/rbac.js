@@ -25,7 +25,7 @@ export const PERM = {
   CHAT_CREATE_GROUP: "chat.create_group",
 };
 
-export const STAFF_ROLES = ["super_admin", "admin", "moderator"];
+export const STAFF_ROLES = ["super_admin", "admin", "moderator", "support_agent"];
 
 const STAFF_SET = new Set(STAFF_ROLES);
 

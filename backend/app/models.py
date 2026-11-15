@@ -597,3 +597,53 @@ class AdminChatMessage(Base):
 
     room: Mapped["AdminChatRoom"] = relationship(back_populates="messages")
     sender: Mapped["User"] = relationship()
+
+
+class MailThread(Base):
+    """Helpdesk email — fil de conversation avec un expéditeur externe."""
+
+    __tablename__ = "mail_threads"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    remote_addr: Mapped[str] = mapped_column(String(254), index=True)
+    remote_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    local_addr: Mapped[str] = mapped_column(String(254), index=True)
+    subject: Mapped[str] = mapped_column(String(300), default="(sans objet)")
+    status: Mapped[str] = mapped_column(String(32), default="open", index=True)
+    assigned_admin_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, index=True
+    )
+
+    messages: Mapped[list["MailThreadMessage"]] = relationship(
+        back_populates="thread", cascade="all, delete-orphan",
+        order_by="MailThreadMessage.created_at",
+    )
+
+
+class MailThreadMessage(Base):
+    """Message d'un fil email — direction 'in' (client) ou 'out' (agent)."""
+
+    __tablename__ = "mail_thread_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    thread_id: Mapped[int] = mapped_column(
+        ForeignKey("mail_threads.id", ondelete="CASCADE"), index=True
+    )
+    direction: Mapped[str] = mapped_column(String(8))
+    sender_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    from_addr: Mapped[str | None] = mapped_column(String(254), nullable=True)
+    from_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    subject: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    html: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rfc_message_id: Mapped[str | None] = mapped_column(String(300), unique=True, nullable=True)
+    in_reply_to: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    thread: Mapped["MailThread"] = relationship(back_populates="messages")

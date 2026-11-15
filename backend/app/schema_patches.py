@@ -20,7 +20,7 @@ def ensure_userrole_super_admin() -> None:
     if not url.startswith("postgresql"):
         return
 
-    extra_values = ("super_admin", "support")
+    extra_values = ("super_admin", "support", "support_agent")
     try:
         with engine.connect() as conn:
             has_type = conn.execute(

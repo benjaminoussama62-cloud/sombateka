@@ -82,6 +82,9 @@ class Settings(BaseSettings):
 
     upload_max_bytes: int = 6 * 1024 * 1024
 
+    # Helpdesk email entrant — worker Cloudflare POST /api/mail/inbound
+    mail_inbound_secret: str = ""
+
     # Email (log, smtp, resend, ayeba)
     email_provider: str = "log"
     email_from: str = "SombaTeka <noreply@sombatekaonline.com>"
