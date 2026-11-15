@@ -33,7 +33,7 @@ def send_email_task(
     tâche (acks_late + retry). `send_email` retourne False sans lever : on ne
     retente que sur exception inattendue.
     """
-    from app.services.email import send_email
+    from app.services.email import EmailTransientError, send_email
 
     try:
         return send_email(
@@ -46,6 +46,11 @@ def send_email_task(
             idempotency_key=idempotency_key,
             reply_to=reply_to,
         )
+    except EmailTransientError as exc:
+        # 429 (fenêtre anti-spam ~10 min) ou 5xx provider → on attend avant retry
+        countdown = 600 if "429" in str(exc) else 120
+        logger.warning("provider transitoire (%s → %s) — retry dans %ss", email_type, to, countdown)
+        raise self.retry(exc=exc, countdown=countdown)
     except Exception as exc:
         logger.exception("send_email_task crashed (%s → %s)", email_type, to)
         raise self.retry(exc=exc)

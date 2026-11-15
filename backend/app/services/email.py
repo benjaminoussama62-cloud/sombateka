@@ -15,6 +15,14 @@ from app.settings import settings
 
 logger = logging.getLogger(__name__)
 
+
+class EmailTransientError(Exception):
+    """Erreur transitoire du provider mail (429 rate-limit, 5xx panne).
+
+    Levée pour que la tâche Celery retente avec un délai au lieu de perdre
+    le mail. Les 4xx métier (400/401/422) restent des échecs définitifs.
+    """
+
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -195,16 +203,20 @@ def send_email_async(
     except Exception:
         # Broker indisponible → envoi synchrone en dernier recours
         logger.exception("email queue indisponible (%s → %s) — envoi synchrone", email_type, to)
-        return send_email(
-            to,
-            subject,
-            text_body,
-            html_body=html_body,
-            email_type=email_type,
-            template_data=template_data,
-            idempotency_key=idempotency_key,
-            reply_to=reply_to,
-        )
+        try:
+            return send_email(
+                to,
+                subject,
+                text_body,
+                html_body=html_body,
+                email_type=email_type,
+                template_data=template_data,
+                idempotency_key=idempotency_key,
+                reply_to=reply_to,
+            )
+        except EmailTransientError:
+            logger.error("envoi synchrone : provider transitoirement indisponible (%s → %s)", email_type, to)
+            return False
 
 
 def send_otp_email(email: str, code: str, *, purpose: str = "login") -> bool:
@@ -421,7 +433,11 @@ def _send_ayeba(
             logger.warning("Ayeba Mail timeout/réseau (%s → %s) — retry même clé", email_type, to)
             response = _post()
     except httpx.HTTPStatusError as exc:
-        logger.error("Ayeba Mail HTTP %s", exc.response.status_code if exc.response else "?")
+        status = exc.response.status_code if exc.response else 0
+        if status == 429 or status >= 500:
+            # Fenêtre anti-spam ou panne provider → retry par la tâche Celery
+            raise EmailTransientError(f"Ayeba Mail HTTP {status}") from exc
+        logger.error("Ayeba Mail HTTP %s", status)
         return False
     except Exception as exc:
         logger.exception("Ayeba Mail failed: %s", exc)
