@@ -123,7 +123,7 @@ $lastUpdated
   static const String privacyBody = '''
 1. Responsable du traitement
 SombaTeka — marketplace RDC.
-Contact DPO / vie privée : support@sombatekaonline.com
+Contact DPO / vie privée : privacy@sombatekaonline.com
 Adresse de suppression de compte : https://sombatekaonline.com/account-deletion
 
 2. Données collectées
@@ -180,14 +180,14 @@ Conformément à la législation applicable en RDC et aux bonnes pratiques inter
 • Rectifier vos informations (Paramètres → Modifier le profil).
 • Supprimer votre compte (Paramètres → Confidentialité → Supprimer mon compte, ou page web dédiée).
 • Vous opposer au traitement marketing (désactiver notifications).
-• Demander une copie de vos données : support@sombatekaonline.com (délai indicatif 30 jours).
+• Demander une copie de vos données : privacy@sombatekaonline.com (délai indicatif 30 jours).
 
 9. Sécurité
 • Chiffrement HTTPS (TLS 1.2+) pour toutes les communications API.
 • Mots de passe hashés (bcrypt) ; session sécurisée par jeton JWT.
 • Jetons stockés dans le stockage sécurisé de l'appareil (Keychain / EncryptedSharedPreferences).
 • Rate limiting, validation des entrées, journalisation des actions admin sensibles.
-• Aucune garantie absolue ; signalez toute faille à support@sombatekaonline.com (programme de divulgation responsable).
+• Aucune garantie absolue ; signalez toute faille à abuse@sombatekaonline.com (programme de divulgation responsable).
 
 10. Mineurs
 SombaTeka n'est pas destinée aux moins de 18 ans sans autorisation parentale vérifiable. Nous supprimons les comptes identifiés comme mineurs non autorisés.
