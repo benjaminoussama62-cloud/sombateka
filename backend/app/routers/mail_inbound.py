@@ -9,7 +9,9 @@ Le worker `sombateka-mail-inbound` envoie le MIME brut avec :
 from __future__ import annotations
 
 import hmac
+import html as html_lib
 import logging
+import re
 from email import policy
 from email.parser import BytesParser
 from email.utils import parseaddr
@@ -55,6 +57,25 @@ def _extract_bodies(msg) -> tuple[str | None, str | None]:
     return text_part, html_part
 
 
+_TAG_NL_RE = re.compile(r"(?is)</(p|div|li|tr|td|h[1-6]|blockquote)>")
+_TAG_RE = re.compile(r"(?is)<[^>]+>")
+_SCRIPT_RE = re.compile(r"(?is)<(script|style)[^>]*>.*?</\1>")
+_BR_RE = re.compile(r"(?is)<br\s*/?>")
+_SPC_RE = re.compile(r"[ \t\xa0]+")
+_PARA_RE = re.compile(r"\n\s*\n+")
+
+
+def _html_to_text(html: str) -> str:
+    s = _SCRIPT_RE.sub(" ", html)
+    s = _BR_RE.sub("\n", s)
+    s = _TAG_NL_RE.sub("\n", s)
+    s = _TAG_RE.sub(" ", s)
+    s = html_lib.unescape(s)
+    s = _SPC_RE.sub(" ", s)
+    s = _PARA_RE.sub("\n\n", s)
+    return s.strip()
+
+
 @router.post("/mail/inbound")
 async def receive_inbound(request: Request, db: Session = Depends(get_db)) -> dict:
     secret = settings.mail_inbound_secret
@@ -91,6 +112,8 @@ async def receive_inbound(request: Request, db: Session = Depends(get_db)) -> di
     references = str(msg.get("References", "") or "").split()
 
     text_part, html_part = _extract_bodies(msg)
+    if not text_part and html_part:
+        text_part = _html_to_text(html_part) or None
 
     thread = record_inbound(
         db,
