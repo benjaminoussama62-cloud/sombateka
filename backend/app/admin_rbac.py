@@ -33,9 +33,19 @@ ROLE_LABELS: dict[UserRole, str] = {
     UserRole.super_admin: "Super administrateur",
     UserRole.admin: "Administrateur",
     UserRole.moderator: "Modérateur",
+    UserRole.support_agent: "Agent support",
 }
 
 ROLE_PERMISSIONS: dict[UserRole, frozenset[str]] = {
+  UserRole.support_agent: frozenset(
+        {
+            PERM_DASHBOARD,
+            PERM_SUPPORT_VIEW,
+            PERM_SUPPORT_REPLY,
+            PERM_CHAT_VIEW,
+            PERM_CHAT_SEND,
+        }
+    ),
   UserRole.moderator: frozenset(
         {
             PERM_DASHBOARD,
@@ -99,7 +109,7 @@ ROLE_PERMISSIONS: dict[UserRole, frozenset[str]] = {
     ),
 }
 
-STAFF_ROLES = frozenset({UserRole.super_admin, UserRole.admin, UserRole.moderator})
+STAFF_ROLES = frozenset({UserRole.super_admin, UserRole.admin, UserRole.moderator, UserRole.support_agent})
 
 
 def is_staff(role: UserRole) -> bool:

@@ -8,13 +8,22 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.admin_rbac import STAFF_ROLES
-from app.constants import TEAM_DISPLAY_NAME
+from app.constants import TEAM_DISPLAY_NAME, TEAM_DISPLAY_NAME_SHORT
 from app.models import Message, User, UserRole
 from app.services.notifications import push_notification
 from app.services.admin_privacy import mask_phone
 from app.services.team_outreach import TEAM_MESSAGE_KIND, get_or_create_team_user, is_team_user
 
-_SIGNATURE = f"\n\n— {TEAM_DISPLAY_NAME}\nCentre d'aide · Modération · Comptes professionnels"
+def _agent_name(staff: User) -> str:
+    name = (staff.display_name or "").strip()
+    return name or "Agent SombaTeka"
+
+
+def _signature_for(staff: User) -> str:
+    return (
+        f"\n\n— {_agent_name(staff)} · {TEAM_DISPLAY_NAME_SHORT}"
+        "\nCentre d'aide · Modération · Comptes professionnels"
+    )
 
 
 def count_unread_support(db: Session) -> int:
@@ -170,12 +179,12 @@ def notify_staff_incoming(db: Session, *, from_user: User, preview: str) -> None
         pass
 
 
-def notify_user_support_reply(db: Session, *, user_id: int, preview: str) -> None:
+def notify_user_support_reply(db: Session, *, user_id: int, preview: str, agent_name: str) -> None:
     push_notification(
         db,
         user_id=user_id,
         type="support_reply",
-        title=TEAM_DISPLAY_NAME,
+        title=f"{agent_name} · {TEAM_DISPLAY_NAME_SHORT}",
         body=(preview or "Nouvelle réponse du centre d'aide").strip()[:200],
         commit=False,
     )
@@ -212,8 +221,8 @@ def send_support_reply(
     text = content.strip()
     if not text:
         raise ValueError("Message vide")
-    if add_signature and TEAM_DISPLAY_NAME not in text:
-        text += _SIGNATURE
+    if add_signature and TEAM_DISPLAY_NAME_SHORT not in text and TEAM_DISPLAY_NAME not in text:
+        text += _signature_for(staff)
 
     now = datetime.now(timezone.utc)
     msg = Message(
@@ -227,7 +236,7 @@ def send_support_reply(
         updated_at=now,
     )
     db.add(msg)
-    notify_user_support_reply(db, user_id=user_id, preview=content.strip())
+    notify_user_support_reply(db, user_id=user_id, preview=content.strip(), agent_name=_agent_name(staff))
     mark_support_read(db, user_id)
     db.flush()
     return msg

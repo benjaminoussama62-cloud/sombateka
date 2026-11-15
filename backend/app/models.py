@@ -27,6 +27,7 @@ class UserRole(str, enum.Enum):
     user = "user"
     official_seller = "official_seller"
     support = "support"
+    support_agent = "support_agent"
     super_admin = "super_admin"
     admin = "admin"
     moderator = "moderator"

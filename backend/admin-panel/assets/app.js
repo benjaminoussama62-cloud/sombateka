@@ -985,9 +985,9 @@ async function renderSupport() {
         </div>
         ${canReply ? `
           <form id="support-reply-form" class="support-reply-form" hidden>
-            <textarea id="support-reply-input" rows="3" maxlength="4000" placeholder="Votre réponse (signée Équipe SombaTeka)…" required></textarea>
+            <textarea id="support-reply-input" rows="3" maxlength="4000" placeholder="Votre réponse (signée de votre nom · Équipe SombaTeka)…" required></textarea>
             <div class="support-reply-actions">
-              <label class="support-sig-opt"><input type="checkbox" id="support-add-signature" checked> Signature équipe</label>
+              <label class="support-sig-opt"><input type="checkbox" id="support-add-signature" checked> Signature agent</label>
               <button type="submit" class="btn btn-primary">Envoyer</button>
             </div>
           </form>
@@ -1356,6 +1356,7 @@ async function renderTeam() {
           <label>Nom affiché <input name="display_name" type="text" maxlength="80" placeholder="Optionnel"></label>
           <label>Rôle
             <select name="role" required>
+              <option value="support_agent">Agent support</option>
               <option value="moderator">Modérateur</option>
               <option value="admin">Administrateur</option>
               ${isSuper ? '<option value="super_admin">Super administrateur</option>' : ""}
@@ -1443,6 +1444,7 @@ async function renderTeam() {
           <button type="button" class="btn btn-ghost btn-sm" data-history="${m.id}">Historique</button>
           ${manage && !m.is_self ? `
             <select class="role-select" data-member="${m.id}" data-current="${m.role}">
+              <option value="support_agent" ${m.role === "support_agent" ? "selected" : ""}>Agent support</option>
               <option value="moderator" ${m.role === "moderator" ? "selected" : ""}>Modérateur</option>
               <option value="admin" ${m.role === "admin" ? "selected" : ""}>Administrateur</option>
               ${isSuper ? `<option value="super_admin" ${m.role === "super_admin" ? "selected" : ""}>Super administrateur</option>` : ""}

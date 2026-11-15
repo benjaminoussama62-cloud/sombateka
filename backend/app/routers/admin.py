@@ -118,13 +118,13 @@ class CatalogStockUpdateBody(BaseModel):
 
 
 class TeamRoleUpdateBody(BaseModel):
-    role: str = Field(..., pattern="^(moderator|admin|super_admin)$")
+    role: str = Field(..., pattern="^(support_agent|moderator|admin|super_admin)$")
 
 
 class TeamInviteBody(BaseModel):
     phone_e164: str
     display_name: str | None = Field(default=None, max_length=80)
-    role: str = Field(..., pattern="^(moderator|admin|super_admin)$")
+    role: str = Field(..., pattern="^(support_agent|moderator|admin|super_admin)$")
     password: str = Field(..., min_length=8, max_length=128)
 
 
