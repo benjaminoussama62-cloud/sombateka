@@ -381,12 +381,28 @@ def _send_ayeba(
         if email_type in {"otp", "verify", "reset", "receipt", "notification", "welcome", "alert"}
         else ("receipt" if email_type == "billing" else "notification")
     )
+    # Rôle d'expéditeur attendu par ayeba (TX_FROM_<APP>_<SENDER>) — lettres
+    # uniquement, 2-20 car. ; les rôles non listés retombent sur le défaut.
+    sender_tag = {
+        "otp": "securite", "verify": "securite", "reset": "securite",
+        "billing": "facturation", "receipt": "facturation",
+        "order": "commandes", "message": "messagerie", "pro": "vendeurs",
+        "moderation": "moderation", "digest": "news", "welcome": "hello",
+        "support": "support", "alert": "alertes",
+    }.get(email_type)
+    data = {"subject": subject, "text": text_body, "html": html_body, **(template_data or {})}
+    if sender_tag:
+        data["sender"] = sender_tag
+    # replyTo : adresse NUE exigée par ayeba (regex stricte, pas de nom affiché)
+    m = re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", reply_to)
+    if m:
+        data["replyTo"] = m.group(0)
     payload = {
         "app": "sombateka",
         "type": ayeba_type,
         "to": to,
         "locale": "fr",
-        "data": {"from": from_addr, "replyTo": reply_to, "subject": subject, "text": text_body, "html": html_body, **(template_data or {})},
+        "data": data,
         "idempotencyKey": idempotency_key or f"sombateka:{email_type}:{to}:{uuid4().hex}",
     }
     headers = {"Authorization": f"Bearer {settings.ayeba_mail_key}"}
