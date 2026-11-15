@@ -105,9 +105,21 @@ def _migrate_order_statuses() -> None:
         pass
 
 
+def _ensure_mail_tables() -> None:
+    """Tables helpdesk email — créées même si auto_create_tables=false."""
+    try:
+        from app.models import MailThread, MailThreadMessage
+
+        MailThread.__table__.create(bind=engine, checkfirst=True)
+        MailThreadMessage.__table__.create(bind=engine, checkfirst=True)
+    except Exception as exc:
+        logger.warning("Patch tables mail: %s", exc)
+
+
 def _ensure_schema_patches() -> None:
     _ensure_user_email_columns()
     _ensure_column("users", "official_name", "VARCHAR(120)")
+    _ensure_mail_tables()
     _ensure_column("users", "official_logo_key", "VARCHAR(255)")
     _ensure_column("listings", "delivery_method", "VARCHAR(32)")
     _ensure_column("listings", "auto_hidden_at", "DATETIME")
