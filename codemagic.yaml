@@ -12,6 +12,11 @@ workflows:
     max_build_duration: 120
     working_directory: mobile
 
+    # Nom de l'intégration "App Store Connect" à créer dans
+    # Teams → Personal Account → Integrations (doit matcher exactement).
+    integrations:
+      app_store_connect: sombateka_apple
+
     environment:
       flutter: stable
       xcode: latest
