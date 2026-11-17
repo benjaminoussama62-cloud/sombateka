@@ -1,0 +1,19 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appID": "TEAM_ID.com.sombateka.st",
+        "components": [
+          { "/": "/annonce/*" },
+          { "/": "/categorie/*" },
+          { "/": "/ville/*" },
+          { "/": "/catalogue" },
+          { "/": "/verify*" },
+          { "/": "/reset*" },
+          { "/": "/app/*" },
+          { "/": "/" }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,71 @@
+# Codemagic — build iOS SombaTeka → App Store Connect (TestFlight)
+#
+# Prérequis côté Codemagic (Teams → Personal Account → Integrations) :
+#   "App Store Connect" / "Apple Developer Portal" connecté avec la clé API
+#   App Store Connect (Key ID + Issuer ID + fichier .p8).
+#   auth: integration l'utilise pour la signature ET l'upload.
+
+workflows:
+  ios-release:
+    name: iOS Release
+    instance_type: mac_mini_m2
+    max_build_duration: 120
+    working_directory: mobile
+
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.sombateka.st
+
+      vars:
+        ST_API_BASE_URL: "https://sombatekaonline.com/api"
+        ST_TERMS_URL: "https://sombatekaonline.com/terms"
+        ST_PRIVACY_URL: "https://sombatekaonline.com/privacy"
+        ST_SOCIAL_AUTH_ENABLED: "true"
+        XCODE_WORKSPACE: "Runner.xcworkspace"
+        XCODE_SCHEME: "Runner"
+
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+      cancel_previous_builds: true
+
+    scripts:
+      - name: Flutter pub get
+        script: flutter pub get
+
+      - name: Icônes + splash
+        script: |
+          dart run flutter_launcher_icons
+          dart run flutter_native_splash:create
+
+      - name: CocoaPods
+        script: pod install --repo-update
+        working_directory: mobile/ios
+
+      - name: Code signing (profils auto via App Store Connect)
+        script: xcode-project use-profiles
+
+      - name: Build IPA
+        script: |
+          flutter build ipa --release \
+            --dart-define=ST_API_BASE_URL=$ST_API_BASE_URL \
+            --dart-define=ST_TERMS_URL=$ST_TERMS_URL \
+            --dart-define=ST_PRIVACY_URL=$ST_PRIVACY_URL \
+            --dart-define=ST_SOCIAL_AUTH_ENABLED=$ST_SOCIAL_AUTH_ENABLED \
+            --export-options-plist=$FCI_EXPORT_OPTIONS_PLIST_PATH
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
