@@ -2,7 +2,7 @@
   "applinks": {
     "details": [
       {
-        "appID": "TEAM_ID.com.sombateka.st",
+        "appID": "F3DZCZ9X27.com.sombateka.st",
         "components": [
           { "/": "/annonce/*" },
           { "/": "/categorie/*" },
