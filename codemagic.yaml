@@ -18,6 +18,8 @@ workflows:
       app_store_connect: sombateka_apple
 
     environment:
+      groups:
+        - ios_signing  # CERTIFICATE_PRIVATE_KEY — à créer dans l'UI (Secure)
       flutter: stable
       xcode: latest
       cocoapods: default
