@@ -25,8 +25,8 @@ SombaTeka (« la Plateforme ») est un canal de mise en relation entre acheteurs
 
 2. Éditeur et contact
 SombaTeka — République Démocratique du Congo.
-Support : support@sombatekaonline.com
-Site : https://sombatekaonline.com
+Support : support@sombateka.cd
+Site : https://sombateka.cd
 
 3. Éligibilité
 • Vous devez avoir au moins 18 ans ou disposer de l'autorisation d'un représentant légal.
@@ -40,7 +40,7 @@ Site : https://sombatekaonline.com
 • La réinitialisation du mot de passe utilise un code envoyé par e-mail.
 • Les profils affichent le badge « Compte vérifié » ou « Compte non vérifié », visible sur la fiche annonce, le profil public et la messagerie.
 • Vous êtes seul responsable de la confidentialité de votre session et de votre mot de passe sur votre appareil.
-• Signalez immédiatement toute utilisation non autorisée à support@sombatekaonline.com.
+• Signalez immédiatement toute utilisation non autorisée à support@sombateka.cd.
 • SombaTeka peut suspendre, restreindre ou supprimer un compte en cas de fraude, contenu illicite, signalements répétés ou violation des CGU.
 
 5. Annonces C2C (comptes particuliers)
@@ -115,7 +115,7 @@ SombaTeka peut modifier ces conditions. Les utilisateurs seront informés via l'
 Les présentes CGU sont régies par le droit de la République Démocratique du Congo. Tout litige non résolu à l'amiable relève des tribunaux compétents du ressort de Kinshasa, sous réserve des règles impératives de protection des consommateurs.
 
 19. Contact
-support@sombatekaonline.com — Centre d'aide intégré dans Paramètres.
+support@sombateka.cd — Centre d'aide intégré dans Paramètres.
 
 $lastUpdated
 ''';
@@ -123,8 +123,8 @@ $lastUpdated
   static const String privacyBody = '''
 1. Responsable du traitement
 SombaTeka — marketplace RDC.
-Contact DPO / vie privée : privacy@sombatekaonline.com
-Adresse de suppression de compte : https://sombatekaonline.com/account-deletion
+Contact DPO / vie privée : privacy@sombateka.cd
+Adresse de suppression de compte : https://sombateka.cd/account-deletion
 
 2. Données collectées
 • Identité : numéro de téléphone mobile RDC (E.164), nom affiché, e-mail personnel, identifiants OAuth (Google, Apple) si utilisés. Un seul compte par e-mail et par numéro.
@@ -180,14 +180,14 @@ Conformément à la législation applicable en RDC et aux bonnes pratiques inter
 • Rectifier vos informations (Paramètres → Modifier le profil).
 • Supprimer votre compte (Paramètres → Confidentialité → Supprimer mon compte, ou page web dédiée).
 • Vous opposer au traitement marketing (désactiver notifications).
-• Demander une copie de vos données : privacy@sombatekaonline.com (délai indicatif 30 jours).
+• Demander une copie de vos données : privacy@sombateka.cd (délai indicatif 30 jours).
 
 9. Sécurité
 • Chiffrement HTTPS (TLS 1.2+) pour toutes les communications API.
 • Mots de passe hashés (bcrypt) ; session sécurisée par jeton JWT.
 • Jetons stockés dans le stockage sécurisé de l'appareil (Keychain / EncryptedSharedPreferences).
 • Rate limiting, validation des entrées, journalisation des actions admin sensibles.
-• Aucune garantie absolue ; signalez toute faille à abuse@sombatekaonline.com (programme de divulgation responsable).
+• Aucune garantie absolue ; signalez toute faille à abuse@sombateka.cd (programme de divulgation responsable).
 
 10. Mineurs
 SombaTeka n'est pas destinée aux moins de 18 ans sans autorisation parentale vérifiable. Nous supprimons les comptes identifiés comme mineurs non autorisés.
@@ -215,7 +215,7 @@ L'application native utilise principalement :
 Aucun cookie publicitaire tiers n'est injecté dans l'app mobile.
 
 3. Site web et Flutter Web
-Lors de l'utilisation de SombaTeka via navigateur (Flutter Web ou sombatekaonline.com) :
+Lors de l'utilisation de SombaTeka via navigateur (Flutter Web ou sombateka.cd) :
 • Cookies strictement nécessaires : session, préférences langue, sécurité CSRF.
 • Cookies analytiques (optionnels) : mesure d'audience agrégée, sans revente de données.
 • Vous pouvez refuser les cookies non essentiels via le bandeau affiché à la première visite ou les paramètres de votre navigateur.
@@ -230,7 +230,7 @@ Paramètres du navigateur → Confidentialité → Cookies.
 Pour l'app : Paramètres → Notifications et Confidentialité.
 
 6. Contact
-support@sombatekaonline.com
+support@sombateka.cd
 
 $lastUpdated
 ''';

@@ -3,7 +3,9 @@ param(
     [string]$ApiUrl,
     [string]$SentryDsn = "",
     [string]$TermsUrl = "https://sombateka.cd/terms",
-    [string]$PrivacyUrl = "https://sombateka.cd/privacy"
+    [string]$PrivacyUrl = "https://sombateka.cd/privacy",
+    [string]$AccountDeletionUrl = "https://sombateka.cd/account-deletion",
+    [string]$SupportEmail = "support@sombateka.cd"
 )
 
 $ErrorActionPreference = "Stop"
@@ -28,7 +30,11 @@ Pop-Location
 $defines = @(
     "--dart-define=ST_API_BASE_URL=$ApiUrl",
     "--dart-define=ST_TERMS_URL=$TermsUrl",
-    "--dart-define=ST_PRIVACY_URL=$PrivacyUrl"
+    "--dart-define=ST_PRIVACY_URL=$PrivacyUrl",
+    "--dart-define=ST_DELETE_ACCOUNT_URL=$AccountDeletionUrl",
+    "--dart-define=ST_SUPPORT_EMAIL=$SupportEmail",
+    "--dart-define=ST_SOCIAL_AUTH_ENABLED=true",
+    "--dart-define=ST_APPLE_SIGNIN_ENABLED=true"
 )
 if ($SentryDsn) {
     $defines += "--dart-define=SENTRY_DSN=$SentryDsn"

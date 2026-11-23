@@ -1540,8 +1540,8 @@ class _DetailScreenState extends State<DetailScreen> with TickerProviderStateMix
         .replaceAll(RegExp(r'^-|-$'), '');
     final pathSlug = slug.isEmpty ? 'annonce' : (slug.length > 60 ? slug.substring(0, 60) : slug);
     final url = id.isEmpty
-        ? 'https://sombatekaonline.com/'
-        : 'https://sombatekaonline.com/annonce/$id-$pathSlug';
+        ? 'https://sombateka.cd/'
+        : 'https://sombateka.cd/annonce/$id-$pathSlug';
     await Share.share(
       '$title${price.isNotEmpty ? ' — $price' : ''}\n$place\n\n$url',
       subject: title,

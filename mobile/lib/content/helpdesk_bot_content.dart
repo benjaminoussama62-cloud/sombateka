@@ -136,7 +136,7 @@ class HelpdeskBotContent {
       category: 'Compte',
       title: 'Supprimer mon compte',
       answer:
-          'Paramètres → « Supprimer mon compte » (action irréversible). Vos annonces actives seront retirées. Les données légales (commandes, litiges) peuvent être conservées selon la loi. Page web : sombatekaonline.com/account-deletion',
+          'Paramètres → « Supprimer mon compte » (action irréversible). Vos annonces actives seront retirées. Les données légales (commandes, litiges) peuvent être conservées selon la loi. Page web : sombateka.cd/account-deletion',
     ),
     HelpdeskBotOption(
       id: 'login',
@@ -164,7 +164,7 @@ class HelpdeskBotContent {
       category: 'Légal',
       title: 'CGU, confidentialité, cookies',
       answer:
-          'Paramètres → Informations légales : Conditions générales, Politique de confidentialité, Cookies. Support e-mail : support@sombatekaonline.com',
+          'Paramètres → Informations légales : Conditions générales, Politique de confidentialité, Cookies. Support e-mail : support@sombateka.cd',
     ),
   ];
 }

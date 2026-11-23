@@ -29,9 +29,9 @@ workflows:
         bundle_identifier: com.sombateka.st
 
       vars:
-        ST_API_BASE_URL: "https://sombatekaonline.com/api"
-        ST_TERMS_URL: "https://sombatekaonline.com/terms"
-        ST_PRIVACY_URL: "https://sombatekaonline.com/privacy"
+        ST_API_BASE_URL: "https://api.sombateka.cd"
+        ST_TERMS_URL: "https://sombateka.cd/terms"
+        ST_PRIVACY_URL: "https://sombateka.cd/privacy"
         ST_SOCIAL_AUTH_ENABLED: "true"
         XCODE_WORKSPACE: "Runner.xcworkspace"
         XCODE_SCHEME: "Runner"

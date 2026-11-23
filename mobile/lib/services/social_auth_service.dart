@@ -207,7 +207,7 @@ class SocialAuthService {
 
         final hint = msg.contains('origin_mismatch') || msg.contains('400')
 
-            ? 'Ajoutez https://sombatekaonline.com dans Google Cloud Console → Credentials → Origines JavaScript autorisées (voir mobile/docs/GOOGLE_PWA_ORIGINS.md).'
+            ? 'Ajoutez https://sombateka.cd dans Google Cloud Console → Credentials → Origines JavaScript autorisées (voir mobile/docs/GOOGLE_PWA_ORIGINS.md).'
 
             : 'Connexion Google impossible : $e';
 
